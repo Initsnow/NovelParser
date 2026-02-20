@@ -364,44 +364,44 @@ async fn batch_analyze_novel(
                 return Ok(true);
             }
 
-            let current = completed.load(Ordering::Relaxed) + 1;
+            let completed_count = completed.load(Ordering::Relaxed);
             let _ = app.emit(
                 "batch_progress",
                 ProgressEvent {
                     novel_id: novel_id.clone(),
                     chapter_id: Some(meta.id),
                     status: "batch_analyzing".to_string(),
-                    current,
+                    current: completed_count,
                     total,
-                    message: format!("批量分析: {} ({}/{})", meta.title, current, total),
+                    message: format!("派发任务: {} (已完成 {}/{})", meta.title, completed_count, total),
                 },
             );
 
             match do_analyze_chapter(&app, db, meta.id, dimensions).await {
                 Ok(_) => {
-                    let current = completed.fetch_add(1, Ordering::Relaxed) + 1;
+                    let completed_count = completed.fetch_add(1, Ordering::Relaxed) + 1;
                     let _ = app.emit(
                         "batch_progress",
                         ProgressEvent {
                             novel_id,
                             chapter_id: Some(meta.id),
                             status: "chapter_done".to_string(),
-                            current,
+                            current: completed_count,
                             total,
-                            message: format!("已完成: {} ({}/{})", meta.title, current, total),
+                            message: format!("已完成: {} (总计 {}/{})", meta.title, completed_count, total),
                         },
                     );
                     Ok(false)
                 }
                 Err(e) => {
-                    let current = completed.load(Ordering::Relaxed) + 1;
+                    let completed_count = completed.load(Ordering::Relaxed);
                     let _ = app.emit(
                         "batch_progress",
                         ProgressEvent {
                             novel_id,
                             chapter_id: Some(meta.id),
                             status: "error".to_string(),
-                            current,
+                            current: completed_count,
                             total,
                             message: format!("分析 {} 失败: {}", meta.title, e),
                         },
@@ -495,44 +495,44 @@ async fn batch_analyze_chapters(
                 return Ok(true);
             }
 
-            let current = completed.load(Ordering::Relaxed) + 1;
+            let completed_count = completed.load(Ordering::Relaxed);
             let _ = app.emit(
                 "batch_progress",
                 ProgressEvent {
                     novel_id: novel_id.clone(),
                     chapter_id: Some(meta.id),
                     status: "batch_analyzing".to_string(),
-                    current,
+                    current: completed_count,
                     total,
-                    message: format!("批量分析: {} ({}/{})", meta.title, current, total),
+                    message: format!("派发任务: {} (已完成 {}/{})", meta.title, completed_count, total),
                 },
             );
 
             match do_analyze_chapter(&app, db, meta.id, dimensions).await {
                 Ok(_) => {
-                    let current = completed.fetch_add(1, Ordering::Relaxed) + 1;
+                    let completed_count = completed.fetch_add(1, Ordering::Relaxed) + 1;
                     let _ = app.emit(
                         "batch_progress",
                         ProgressEvent {
                             novel_id,
                             chapter_id: Some(meta.id),
                             status: "chapter_done".to_string(),
-                            current,
+                            current: completed_count,
                             total,
-                            message: format!("已完成: {} ({}/{})", meta.title, current, total),
+                            message: format!("已完成: {} (总计 {}/{})", meta.title, completed_count, total),
                         },
                     );
                     Ok(false)
                 }
                 Err(e) => {
-                    let current = completed.load(Ordering::Relaxed) + 1;
+                    let completed_count = completed.load(Ordering::Relaxed);
                     let _ = app.emit(
                         "batch_progress",
                         ProgressEvent {
                             novel_id,
                             chapter_id: Some(meta.id),
                             status: "error".to_string(),
-                            current,
+                            current: completed_count,
                             total,
                             message: format!("分析 {} 失败: {}", meta.title, e),
                         },

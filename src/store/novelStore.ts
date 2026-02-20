@@ -425,7 +425,22 @@ export const useNovelStore = create<NovelStore>((set, get) => ({
                 } else if (currentStatus === 'batch_done' || currentStatus === 'batch_cancelled') {
                     newStartTime = null;
                 }
-                return { batchProgress: payload, batchStartTime: newStartTime };
+
+                // Track active chapters during batch
+                const newAnalyzing = new Set(state.analyzingChapterIds);
+                if (currentStatus === 'batch_analyzing' && payload.chapter_id) {
+                    newAnalyzing.add(payload.chapter_id);
+                } else if ((currentStatus === 'chapter_done' || currentStatus === 'error') && payload.chapter_id) {
+                    newAnalyzing.delete(payload.chapter_id);
+                } else if (currentStatus === 'batch_cancelled' || currentStatus === 'batch_done') {
+                    // Optional: clear all if needed, but they usually clear via chapter_done
+                }
+
+                return {
+                    batchProgress: payload,
+                    batchStartTime: newStartTime,
+                    analyzingChapterIds: newAnalyzing
+                };
             });
 
             // Refresh chapter list when a chapter finishes analyzing
