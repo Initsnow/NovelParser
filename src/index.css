@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: night, emerald;
+}
+
+/* Global typography */
+@layer base {
+  body {
+    @apply bg-base-100 text-base-content min-h-screen;
+    font-family: 'Inter', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+  }
+}
