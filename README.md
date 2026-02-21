@@ -1,8 +1,10 @@
 # NovelParser
 
+![logo](./src-tauri/icons/Square71x71Logo.png)
+
 **NovelParser** 是一款基于 Tauri v2 和 Rust 构建的跨平台 AI 小说/长文精读辅助工具。它可以智能导入并解析长篇电子书（EPUB、TXT），通过接入各类大语言模型，从微观到宏观帮助你深度解构文本的字里行间。
 
-![NovelParser Preview](./preview.png) *(可替换为真实的截图)*
+![NovelParser Preview](./preview.png)
 
 ---
 
