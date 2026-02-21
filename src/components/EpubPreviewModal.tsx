@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { EpubPreview } from '../types';
 import { X, CheckSquare, Square } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 interface Props {
     preview: EpubPreview;
@@ -47,10 +48,23 @@ export default function EpubPreviewModal({ preview, onConfirm, onCancel }: Props
     };
 
     return createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-base-300/60 backdrop-blur-sm" onClick={onCancel} />
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-auto">
+            <motion.div
+                className="absolute inset-0 bg-base-300/40 backdrop-blur-sm"
+                onClick={onCancel}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+            />
 
-            <div className="relative z-10 w-full max-w-2xl bg-base-200 rounded-2xl shadow-2xl border border-base-content/10 flex flex-col max-h-[85vh]">
+            <motion.div
+                className="relative z-10 w-full max-w-2xl bg-base-100/95 backdrop-blur shadow-2xl overflow-hidden flex flex-col max-h-[90vh] rounded-2xl border border-base-content/10 m-4"
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+            >
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-base-300 shrink-0">
                     <div>
@@ -113,7 +127,7 @@ export default function EpubPreviewModal({ preview, onConfirm, onCancel }: Props
                         导入 {selectedCount} 个章节
                     </button>
                 </div>
-            </div>
+            </motion.div>
         </div>,
         document.body
     );

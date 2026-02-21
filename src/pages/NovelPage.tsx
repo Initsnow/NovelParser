@@ -5,8 +5,10 @@ import ChapterAnalysisView from '../components/ChapterAnalysisView';
 import ManualPromptPanel from '../components/ManualPromptPanel';
 import FullBookManualPromptPanel from '../components/FullBookManualPromptPanel';
 import DimensionSelector from '../components/DimensionSelector';
-import { Play, CheckCircle, Circle, ChevronRight, Zap, ClipboardCopy, Settings2, Trash2, ListChecks, X } from 'lucide-react';
+import { Play, CheckCircle, Circle, ChevronRight, Zap, ClipboardCopy, Settings2, Trash2, ListChecks, X, Download } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { open } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 
 const formatTime = (ms: number) => {
     const s = Math.floor(ms / 1000);
@@ -150,12 +152,20 @@ function FullBookSummaryView({ novelId }: { novelId: string }) {
                             生成时间: {new Date(novelSummary.created_at).toLocaleString()}
                         </p>
                     </div>
-                    <button
-                        className="btn btn-outline btn-sm"
-                        onClick={handleGenerate}
-                    >
-                        <Zap size={14} /> 重新生成
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            className="btn btn-outline btn-sm btn-error"
+                            onClick={async () => await useNovelStore.getState().clearNovelSummary(novelId)}
+                        >
+                            清除分析
+                        </button>
+                        <button
+                            className="btn btn-outline btn-sm"
+                            onClick={handleGenerate}
+                        >
+                            <Zap size={14} /> 重新生成
+                        </button>
+                    </div>
                 </div>
 
                 <div className="prose prose-sm md:prose-base max-w-none">
@@ -203,6 +213,7 @@ function FullBookSummaryView({ novelId }: { novelId: string }) {
 
 export default function NovelPage() {
     const { novelId } = useParams<{ novelId: string }>();
+    const [exportAlert, setExportAlert] = useState<{ title: string, msg: string, kind: 'info' | 'error' } | null>(null);
     const {
         currentNovel, chapters, selectedChapter,
         selectNovel, selectChapter, analysisMode, setAnalysisMode,
@@ -276,6 +287,23 @@ export default function NovelPage() {
         }
     };
 
+    const handleExport = async () => {
+        try {
+            const dirPath = await open({
+                directory: true,
+                multiple: false,
+                title: '选择导出目录'
+            });
+            if (dirPath) {
+                await invoke('export_novel_report', { novelId: currentNovel.id, dirPath: dirPath as string });
+                setExportAlert({ title: '导出成功', msg: `已成功将分析报告导出至:\n${dirPath}`, kind: 'info' });
+            }
+        } catch (e) {
+            console.error('Export failed:', e);
+            setExportAlert({ title: '错误', msg: `导出失败: ${e}`, kind: 'error' });
+        }
+    };
+
     const isChapterBusy = (id: number) =>
         analyzingChapterIds.has(id) || (batchProgress?.status === 'batch_analyzing' && batchProgress?.chapter_id === id);
 
@@ -291,15 +319,15 @@ export default function NovelPage() {
                         </div>
                     </div>
 
-                    <div className="flex gap-2 mt-4 tabs tabs-boxed bg-base-300/50 p-1">
+                    <div className="flex gap-2 mt-4 tabs tabs-boxed bg-base-300/50 p-1 rounded-full">
                         <button
-                            className={`tab tab-sm flex-1 ${viewMode === 'chapter' ? 'tab-active' : ''}`}
+                            className={`tab tab-sm flex-1 rounded-full ${viewMode === 'chapter' ? 'tab-active' : ''}`}
                             onClick={() => setViewMode('chapter')}
                         >
                             章节列表
                         </button>
                         <button
-                            className={`tab tab-sm flex-1 ${viewMode === 'full-book' ? 'tab-active' : ''}`}
+                            className={`tab tab-sm flex-1 rounded-full ${viewMode === 'full-book' ? 'tab-active' : ''}`}
                             onClick={() => setViewMode('full-book')}
                         >
                             全书概览
@@ -328,6 +356,13 @@ export default function NovelPage() {
                             title={multiSelectMode ? '退出多选' : '多选模式'}
                         >
                             {multiSelectMode ? <X size={14} /> : <ListChecks size={14} />}
+                        </button>
+                        <button
+                            className="btn btn-ghost btn-xs btn-square"
+                            onClick={handleExport}
+                            title="导出分析报告"
+                        >
+                            <Download size={14} />
                         </button>
                         <button
                             className="btn btn-ghost btn-xs btn-square"
@@ -518,6 +553,7 @@ export default function NovelPage() {
                                     <ManualPromptPanel
                                         chapterId={ch.id}
                                         chapterTitle={ch.title}
+                                        onSuccess={() => toggleMultiSelect(ch.id)}
                                     />
                                 </div>
                             ))
@@ -625,6 +661,17 @@ export default function NovelPage() {
                         exitMultiSelect();
                     }}
                     onCancel={() => setConfirmBatchDelete(false)}
+                />
+            )}
+
+            {exportAlert && (
+                <ConfirmDialog
+                    title={exportAlert.title}
+                    message={exportAlert.msg}
+                    kind={exportAlert.kind}
+                    hideCancel={true}
+                    onConfirm={() => setExportAlert(null)}
+                    onCancel={() => setExportAlert(null)}
                 />
             )}
         </div>

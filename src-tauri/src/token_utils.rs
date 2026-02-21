@@ -20,7 +20,8 @@ pub fn estimate_tokens(text: &str) -> usize {
 
 /// Calculate available content tokens given LLM config and prompt template overhead.
 pub fn calculate_available_tokens(config: &LlmConfig, prompt_template_tokens: usize) -> usize {
-    let output_reserve = config.max_output_tokens.unwrap_or(4096) as usize;
+    // Rely on chapter_max_tokens for general calculation purposes.
+    let output_reserve = config.chapter_max_tokens.unwrap_or(8192) as usize;
     let total = config.max_context_tokens as usize;
     total
         .saturating_sub(prompt_template_tokens)

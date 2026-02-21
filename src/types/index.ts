@@ -191,13 +191,18 @@ export interface CharacterArc {
 
 // ---- LLM Config ----
 
+export type ContextInjectionMode = 'None' | 'PreviousChapter' | 'AllPrevious';
+
 export interface LlmConfig {
   base_url: string;
   api_key: string;
   model: string;
   max_context_tokens: number;
-  max_output_tokens: number | null;
+  chapter_max_tokens: number | null;
+  summary_max_tokens: number | null;
   temperature: number;
+  max_concurrent_tasks: number;
+  context_injection_mode: ContextInjectionMode;
 }
 
 export type AnalysisMode = 'api' | 'manual';

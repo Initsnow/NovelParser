@@ -189,6 +189,50 @@ fn get_chapter_content(state: State<AppState>, chapter_id: i64) -> Result<String
 
 // ---- Analysis Commands ----
 
+fn build_context_string(
+    db: &Database,
+    novel_id: &str,
+    chapter_index: usize,
+    mode: &ContextInjectionMode,
+) -> Result<Option<String>, String> {
+    match mode {
+        ContextInjectionMode::None => Ok(None),
+        ContextInjectionMode::PreviousChapter => {
+            if let Some(prev) = db
+                .load_previous_chapter_analysis(novel_id, chapter_index)
+                .map_err(|e| e.to_string())?
+            {
+                Ok(Some(prev.to_context_string()))
+            } else {
+                Ok(None)
+            }
+        }
+        ContextInjectionMode::AllPrevious => {
+            let mut context = String::new();
+            let all_prev = db
+                .load_all_previous_analyses(novel_id, chapter_index)
+                .map_err(|e| e.to_string())?;
+
+            if all_prev.is_empty() {
+                return Ok(None);
+            }
+
+            for (idx, prev) in &all_prev {
+                if let Some(plot) = &prev.plot {
+                    context.push_str(&format!("第 {} 章摘要：{}\n", idx + 1, plot.summary));
+                }
+            }
+
+            if let Some((_, last)) = all_prev.last() {
+                context.push_str("\n【最近一章详细状态】\n");
+                context.push_str(&last.to_context_string());
+            }
+
+            Ok(Some(context))
+        }
+    }
+}
+
 #[tauri::command]
 fn generate_prompt(
     state: State<AppState>,
@@ -197,8 +241,22 @@ fn generate_prompt(
 ) -> Result<String, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let chapter = db.load_chapter(chapter_id).map_err(|e| e.to_string())?;
-    let prompt_text =
-        prompt::generate_chapter_prompt(&chapter.title, &chapter.content, &dimensions);
+    let config = db.load_llm_config().unwrap_or_default();
+
+    let context_str = build_context_string(
+        &db,
+        &chapter.novel_id,
+        chapter.index,
+        &config.context_injection_mode,
+    )?;
+
+    let prompt_text = prompt::generate_chapter_prompt(
+        &chapter.title,
+        &chapter.content,
+        &dimensions,
+        context_str.as_deref(),
+        false, // Manual mode, assume user has memory in chat session
+    );
     Ok(prompt_text)
 }
 
@@ -210,8 +268,22 @@ fn estimate_prompt_tokens(
 ) -> Result<usize, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let chapter = db.load_chapter(chapter_id).map_err(|e| e.to_string())?;
-    let prompt_text =
-        prompt::generate_chapter_prompt(&chapter.title, &chapter.content, &dimensions);
+    let config = db.load_llm_config().unwrap_or_default();
+
+    let context_str = build_context_string(
+        &db,
+        &chapter.novel_id,
+        chapter.index,
+        &config.context_injection_mode,
+    )?;
+
+    let prompt_text = prompt::generate_chapter_prompt(
+        &chapter.title,
+        &chapter.content,
+        &dimensions,
+        context_str.as_deref(),
+        false, // Manual mode token estimate
+    );
     Ok(token_utils::estimate_tokens(&prompt_text))
 }
 
@@ -237,14 +309,29 @@ async fn do_analyze_chapter(
     chapter_id: i64,
     dimensions: &[AnalysisDimension],
 ) -> Result<ChapterAnalysis, String> {
-    let (chapter, config) = {
+    let (chapter, config, context_str) = {
         let db = db_mutex.lock().map_err(|e| e.to_string())?;
         let chapter = db.load_chapter(chapter_id).map_err(|e| e.to_string())?;
         let config = db.load_llm_config().map_err(|e| e.to_string())?;
-        (chapter, config)
+        let ctx = build_context_string(
+            &db,
+            &chapter.novel_id,
+            chapter.index,
+            &config.context_injection_mode,
+        )?;
+        (chapter, config, ctx)
     };
 
-    let prompt_text = prompt::generate_chapter_prompt(&chapter.title, &chapter.content, dimensions);
+    let forbid_callbacks =
+        config.context_injection_mode == ContextInjectionMode::None || context_str.is_none();
+
+    let prompt_text = prompt::generate_chapter_prompt(
+        &chapter.title,
+        &chapter.content,
+        dimensions,
+        context_str.as_deref(),
+        forbid_callbacks,
+    );
     let prompt_tokens = token_utils::estimate_tokens(&prompt_text);
     let available = token_utils::calculate_available_tokens(&config, 0);
 
@@ -266,9 +353,23 @@ async fn do_analyze_chapter(
                 },
             );
 
-            let seg_prompt =
-                prompt::generate_segment_prompt(&chapter.title, seg, i, segments.len(), dimensions);
-            let response = llm::call_api_stream(&config, &seg_prompt, app, chapter_id).await?;
+            let seg_prompt = prompt::generate_segment_prompt(
+                &chapter.title,
+                seg,
+                i,
+                segments.len(),
+                dimensions,
+                context_str.as_deref(),
+                forbid_callbacks,
+            );
+            let response = llm::call_api_stream(
+                &config,
+                &seg_prompt,
+                app,
+                chapter_id,
+                config.chapter_max_tokens,
+            )
+            .await?;
             let seg_analysis = analysis::parse_analysis_json(&response)?;
             segment_analyses.push(seg_analysis);
         }
@@ -305,7 +406,14 @@ async fn do_analyze_chapter(
             },
         );
 
-        let response = llm::call_api_stream(&config, &prompt_text, app, chapter_id).await?;
+        let response = llm::call_api_stream(
+            &config,
+            &prompt_text,
+            app,
+            chapter_id,
+            config.chapter_max_tokens,
+        )
+        .await?;
         let analysis_result = analysis::parse_analysis_json(&response)?;
 
         let db = db_mutex.lock().map_err(|e| e.to_string())?;
@@ -332,16 +440,17 @@ async fn batch_analyze_novel(
     state: State<'_, AppState>,
     novel_id: String,
 ) -> Result<(), String> {
-    let (novel, metas) = {
+    let (novel, unanalyzed, config) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         let novel = db.load_novel(&novel_id).map_err(|e| e.to_string())?;
         let metas = db
             .list_chapter_metas(&novel_id)
             .map_err(|e| e.to_string())?;
-        (novel, metas)
+        let unanalyzed: Vec<_> = metas.into_iter().filter(|m| !m.has_analysis).collect();
+        let config = db.load_llm_config().unwrap_or_default();
+        (novel, unanalyzed, config)
     };
 
-    let unanalyzed: Vec<_> = metas.into_iter().filter(|m| !m.has_analysis).collect();
     let total = unanalyzed.len();
 
     if total == 0 {
@@ -373,7 +482,10 @@ async fn batch_analyze_novel(
                     status: "batch_analyzing".to_string(),
                     current: completed_count,
                     total,
-                    message: format!("派发任务: {} (已完成 {}/{})", meta.title, completed_count, total),
+                    message: format!(
+                        "派发任务: {} (已完成 {}/{})",
+                        meta.title, completed_count, total
+                    ),
                 },
             );
 
@@ -388,7 +500,10 @@ async fn batch_analyze_novel(
                             status: "chapter_done".to_string(),
                             current: completed_count,
                             total,
-                            message: format!("已完成: {} (总计 {}/{})", meta.title, completed_count, total),
+                            message: format!(
+                                "已完成: {} (总计 {}/{})",
+                                meta.title, completed_count, total
+                            ),
                         },
                     );
                     Ok(false)
@@ -411,7 +526,7 @@ async fn batch_analyze_novel(
             }
         }
     }))
-    .buffer_unordered(3);
+    .buffer_unordered(config.max_concurrent_tasks as usize);
 
     while let Some(res) = futures.next().await {
         match res {
@@ -459,7 +574,7 @@ async fn batch_analyze_chapters(
     novel_id: String,
     chapter_ids: Vec<i64>,
 ) -> Result<(), String> {
-    let (novel, metas) = {
+    let (novel, metas, config) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         let novel = db.load_novel(&novel_id).map_err(|e| e.to_string())?;
         let all_metas = db
@@ -469,7 +584,8 @@ async fn batch_analyze_chapters(
             .into_iter()
             .filter(|m| chapter_ids.contains(&m.id))
             .collect();
-        (novel, selected)
+        let config = db.load_llm_config().unwrap_or_default();
+        (novel, selected, config)
     };
 
     let total = metas.len();
@@ -504,7 +620,10 @@ async fn batch_analyze_chapters(
                     status: "batch_analyzing".to_string(),
                     current: completed_count,
                     total,
-                    message: format!("派发任务: {} (已完成 {}/{})", meta.title, completed_count, total),
+                    message: format!(
+                        "派发任务: {} (已完成 {}/{})",
+                        meta.title, completed_count, total
+                    ),
                 },
             );
 
@@ -519,7 +638,10 @@ async fn batch_analyze_chapters(
                             status: "chapter_done".to_string(),
                             current: completed_count,
                             total,
-                            message: format!("已完成: {} (总计 {}/{})", meta.title, completed_count, total),
+                            message: format!(
+                                "已完成: {} (总计 {}/{})",
+                                meta.title, completed_count, total
+                            ),
                         },
                     );
                     Ok(false)
@@ -542,7 +664,7 @@ async fn batch_analyze_chapters(
             }
         }
     }))
-    .buffer_unordered(3);
+    .buffer_unordered(config.max_concurrent_tasks as usize);
 
     while let Some(res) = futures.next().await {
         match res {
@@ -671,6 +793,23 @@ fn get_novel_summary(
 }
 
 #[tauri::command]
+fn save_novel_summary(
+    state: State<AppState>,
+    novel_id: String,
+    summary: NovelSummary,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.save_novel_summary(&novel_id, &summary)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_novel_summary(state: State<AppState>, novel_id: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.clear_novel_summary(&novel_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn generate_full_summary(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -745,7 +884,7 @@ async fn generate_full_summary(
         );
 
         let prompt_text = prompt::generate_group_summary_prompt(chunk, dims);
-        let response = llm::call_api(&config, &prompt_text).await?;
+        let response = llm::call_api(&config, &prompt_text, config.summary_max_tokens).await?;
         let summary_content = analysis::clean_json_response(&response);
         group_summaries.push(summary_content.clone());
 
@@ -768,13 +907,15 @@ async fn generate_full_summary(
         },
     );
 
-    let final_summary = if group_summaries.len() == 1 {
+    let mut final_summary = if group_summaries.len() == 1 {
         analysis::parse_summary_json(&group_summaries[0])?
     } else {
         let final_prompt = prompt::generate_final_summary_prompt(&group_summaries, dims);
-        let response = llm::call_api(&config, &final_prompt).await?;
+        let response = llm::call_api(&config, &final_prompt, config.summary_max_tokens).await?;
         analysis::parse_summary_json(&response)?
     };
+
+    final_summary.created_at = chrono::Utc::now().to_rfc3339();
 
     {
         let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -801,7 +942,7 @@ async fn generate_full_summary(
 async fn export_novel_report(
     state: State<'_, AppState>,
     novel_id: String,
-    path: String,
+    dir_path: String,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let novel = db.load_novel(&novel_id).map_err(|e| e.to_string())?;
@@ -809,18 +950,40 @@ async fn export_novel_report(
         .load_novel_summary(&novel_id)
         .map_err(|e| e.to_string())?;
 
-    let mut chapters = Vec::new();
+    // Create the target folder "dir_path/《小说名字》分析报告"
+    let folder_name = format!("《{}》分析报告", novel.title);
+    let target_dir = std::path::Path::new(&dir_path).join(folder_name);
+
+    if !target_dir.exists() {
+        std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+    }
+
+    if let Some(s) = &summary {
+        let global_md = export::generate_global_summary_md(&novel, Some(s));
+        let sum_path = target_dir.join("全书分析.md");
+        std::fs::write(&sum_path, global_md).map_err(|e| e.to_string())?;
+    }
+
     let metas = db
         .list_chapter_metas(&novel_id)
         .map_err(|e| e.to_string())?;
+
     for meta in metas {
         if let Ok(ch) = db.load_chapter(meta.id) {
-            chapters.push(ch);
+            // Only export chapters that have an analysis
+            if ch.analysis.is_some() {
+                let md = export::generate_chapter_md(&ch);
+                // Windows-safe characters sanitization
+                let safe_title = ch
+                    .title
+                    .replace(&['/', '\\', ':', '*', '?', '"', '<', '>', '|'][..], "_");
+                let file_name = format!("第{:03}章_{}.md", ch.index + 1, safe_title);
+                let ch_path = target_dir.join(file_name);
+                std::fs::write(&ch_path, md).map_err(|e| e.to_string())?;
+            }
         }
     }
 
-    let md = export::generate_markdown_report(&novel, summary.as_ref(), &chapters);
-    std::fs::write(&path, md).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -892,6 +1055,8 @@ pub fn run() {
             save_llm_config,
             update_novel_dimensions,
             get_novel_summary,
+            save_novel_summary,
+            clear_novel_summary,
             get_full_summary_manual_prompt,
             generate_full_summary,
             export_novel_report,

@@ -5,9 +5,10 @@ import { Copy, Check, Send, AlertTriangle } from 'lucide-react';
 interface Props {
     chapterId: number;
     chapterTitle: string;
+    onSuccess?: () => void;
 }
 
-export default function ManualPromptPanel({ chapterId, chapterTitle }: Props) {
+export default function ManualPromptPanel({ chapterId, chapterTitle, onSuccess }: Props) {
     const { generatePrompt, estimateTokens, parseManualResult, saveAnalysis, llmConfig } = useNovelStore();
     const [prompt, setPrompt] = useState('');
     const [tokenCount, setTokenCount] = useState(0);
@@ -47,6 +48,7 @@ export default function ManualPromptPanel({ chapterId, chapterTitle }: Props) {
         try {
             const analysis = await parseManualResult(responseJson);
             await saveAnalysis(chapterId, analysis);
+            if (onSuccess) onSuccess();
         } catch (e) {
             setParseError(String(e));
         }
@@ -79,7 +81,7 @@ export default function ManualPromptPanel({ chapterId, chapterTitle }: Props) {
                         </button>
                     </div>
                     <textarea
-                        className="textarea textarea-bordered text-xs font-mono w-full h-40 resize-y"
+                        className="textarea textarea-bordered text-xs font-mono w-full h-40 resize-y focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow"
                         value={prompt}
                         readOnly
                     />
@@ -91,7 +93,7 @@ export default function ManualPromptPanel({ chapterId, chapterTitle }: Props) {
                 <div className="card-body p-4">
                     <h4 className="font-semibold text-sm mb-2">② 粘贴 AI 返回的 JSON</h4>
                     <textarea
-                        className="textarea textarea-bordered text-xs font-mono w-full h-40 resize-y"
+                        className="textarea textarea-bordered text-xs font-mono w-full h-40 resize-y focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow"
                         value={responseJson}
                         onChange={(e) => setResponseJson(e.target.value)}
                         placeholder='将 AI 返回的 JSON 结果粘贴到这里...'

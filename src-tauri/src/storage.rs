@@ -230,6 +230,58 @@ impl Database {
         Ok(())
     }
 
+    pub fn load_previous_chapter_analysis(
+        &self,
+        novel_id: &str,
+        current_index: usize,
+    ) -> Result<Option<ChapterAnalysis>> {
+        let result = self.conn.query_row(
+            "SELECT analysis FROM chapters 
+             WHERE novel_id = ?1 AND chapter_index < ?2 AND analysis IS NOT NULL 
+             ORDER BY chapter_index DESC LIMIT 1",
+            params![novel_id, current_index as i64],
+            |row| {
+                let analysis_str: String = row.get(0)?;
+                Ok(serde_json::from_str(&analysis_str).ok())
+            },
+        );
+
+        match result {
+            Ok(Some(analysis)) => Ok(Some(analysis)),
+            Ok(None) => Ok(None),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn load_all_previous_analyses(
+        &self,
+        novel_id: &str,
+        current_index: usize,
+    ) -> Result<Vec<(usize, ChapterAnalysis)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT chapter_index, analysis FROM chapters 
+             WHERE novel_id = ?1 AND chapter_index < ?2 AND analysis IS NOT NULL 
+             ORDER BY chapter_index ASC",
+        )?;
+
+        let results = stmt.query_map(params![novel_id, current_index as i64], |row| {
+            let index: i64 = row.get(0)?;
+            let analysis_str: String = row.get(1)?;
+            let analysis: Option<ChapterAnalysis> = serde_json::from_str(&analysis_str).ok();
+            Ok((index as usize, analysis))
+        })?;
+
+        let mut analyses = Vec::new();
+        for res in results {
+            if let Ok((index, Some(analysis))) = res {
+                analyses.push((index, analysis));
+            }
+        }
+
+        Ok(analyses)
+    }
+
     // ---- Novel Summary ----
 
     pub fn save_novel_summary(&self, novel_id: &str, summary: &NovelSummary) -> Result<()> {
@@ -251,10 +303,22 @@ impl Database {
             },
         );
         match result {
-            Ok(summary) => Ok(summary),
+            Ok(Some(summary)) => {
+                let json_summary: NovelSummary = summary;
+                Ok(Some(json_summary))
+            }
+            Ok(None) => Ok(None),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    pub fn clear_novel_summary(&self, novel_id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM novel_summaries WHERE novel_id = ?1",
+            params![novel_id],
+        )?;
+        Ok(())
     }
 
     // ---- Settings ----

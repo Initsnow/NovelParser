@@ -53,7 +53,11 @@ pub async fn list_models(config: &LlmConfig) -> Result<Vec<String>, String> {
 }
 
 /// Call an OpenAI-compatible API with the given prompt.
-pub async fn call_api(config: &LlmConfig, prompt: &str) -> Result<String, String> {
+pub async fn call_api(
+    config: &LlmConfig,
+    prompt: &str,
+    max_output: Option<u32>,
+) -> Result<String, String> {
     // Token check
     let prompt_tokens = estimate_tokens(prompt);
     let max_tokens = config.max_context_tokens as usize;
@@ -87,10 +91,10 @@ pub async fn call_api(config: &LlmConfig, prompt: &str) -> Result<String, String
             ),
         ]);
 
-    if let Some(max_output) = config.max_output_tokens {
-        builder.max_tokens(max_output);
+    if let Some(mo) = max_output {
+        builder.max_tokens(mo);
     } else {
-        // Fallback for max_output_tokens
+        // Fallback for max_output
         builder.max_tokens(8192 as u32);
     }
 
@@ -122,6 +126,7 @@ pub async fn call_api_stream(
     prompt: &str,
     app: &tauri::AppHandle,
     chapter_id: i64,
+    max_output: Option<u32>,
 ) -> Result<String, String> {
     let prompt_tokens = estimate_tokens(prompt);
     let max_tokens = config.max_context_tokens as usize;
@@ -152,8 +157,8 @@ pub async fn call_api_stream(
             ),
         ]);
 
-    if let Some(max_output) = config.max_output_tokens {
-        builder.max_tokens(max_output);
+    if let Some(mo) = max_output {
+        builder.max_tokens(mo);
     } else {
         builder.max_tokens(8192u32);
     }

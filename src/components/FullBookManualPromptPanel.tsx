@@ -45,7 +45,7 @@ export default function FullBookManualPromptPanel({ novelId }: Props) {
         setParsing(true);
         setParseError(null);
         try {
-            await parseManualFullSummaryResult(responseJson);
+            await parseManualFullSummaryResult(responseJson, novelId);
         } catch (e) {
             setParseError(String(e));
         }
@@ -83,7 +83,7 @@ export default function FullBookManualPromptPanel({ novelId }: Props) {
                         </div>
                     ) : (
                         <textarea
-                            className="textarea textarea-bordered text-xs font-mono w-full h-40 resize-y"
+                            className="textarea textarea-bordered text-xs font-mono w-full h-40 resize-y focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow"
                             value={prompt}
                             readOnly
                         />
@@ -96,7 +96,7 @@ export default function FullBookManualPromptPanel({ novelId }: Props) {
                 <div className="card-body p-4">
                     <h4 className="font-semibold text-sm mb-2">② 粘贴 AI 返回的全书 JSON</h4>
                     <textarea
-                        className="textarea textarea-bordered text-xs font-mono w-full h-40 resize-y"
+                        className="textarea textarea-bordered text-xs font-mono w-full h-40 resize-y focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow"
                         value={responseJson}
                         onChange={(e) => setResponseJson(e.target.value)}
                         placeholder='将 AI 返回的 JSON 结果粘贴到这里...'

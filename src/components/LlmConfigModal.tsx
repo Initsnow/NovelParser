@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNovelStore } from '../store/novelStore';
 import type { LlmConfig } from '../types';
 import { X, Save, RefreshCw } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 const MODEL_PRESETS: { name: string; tokens: number }[] = [
     { name: 'Gemini 3.1 Pro', tokens: 1000000 },
@@ -72,13 +73,23 @@ export default function LlmConfigModal({ onClose }: Props) {
     return createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             {/* Backdrop */}
-            <div
+            <motion.div
                 className="absolute inset-0 bg-base-300/60 backdrop-blur-sm shadow-xl"
                 onClick={onClose}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
             />
 
             {/* Modal Content */}
-            <div className="relative z-10 w-full max-w-lg bg-base-200 rounded-2xl shadow-2xl border border-base-content/10 flex flex-col max-h-[90vh]">
+            <motion.div
+                className="relative z-10 w-full max-w-lg bg-base-200 rounded-2xl shadow-2xl border border-base-content/10 flex flex-col max-h-[90vh]"
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                transition={{ type: "spring", bounce: 0, duration: 0.3 }}
+            >
                 <div className="flex items-center justify-between p-4 border-b border-base-300 shrink-0">
                     <h3 className="font-bold text-lg">LLM 配置</h3>
                     <button className="btn btn-ghost btn-sm btn-square" onClick={onClose} title="关闭 (Esc)">
@@ -183,14 +194,25 @@ export default function LlmConfigModal({ onClose }: Props) {
                     </div>
 
                     {/* Max Output Tokens */}
-                    <div className="form-control">
-                        <label className="label"><span className="label-text">最大输出 Token 数</span></label>
-                        <input
-                            type="number"
-                            className="input input-bordered input-sm w-full focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow"
-                            value={config.max_output_tokens || 8192}
-                            onChange={(e) => setConfig({ ...config, max_output_tokens: parseInt(e.target.value) || null })}
-                        />
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="form-control">
+                            <label className="label"><span className="label-text">章节输出上限</span></label>
+                            <input
+                                type="number"
+                                className="input input-bordered input-sm w-full focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow"
+                                value={config.chapter_max_tokens || 8192}
+                                onChange={(e) => setConfig({ ...config, chapter_max_tokens: parseInt(e.target.value) || null })}
+                            />
+                        </div>
+                        <div className="form-control">
+                            <label className="label"><span className="label-text">全书汇总输出上限</span></label>
+                            <input
+                                type="number"
+                                className="input input-bordered input-sm w-full focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow"
+                                value={config.summary_max_tokens || 16384}
+                                onChange={(e) => setConfig({ ...config, summary_max_tokens: parseInt(e.target.value) || null })}
+                            />
+                        </div>
                     </div>
 
                     {/* Temperature */}
@@ -211,6 +233,44 @@ export default function LlmConfigModal({ onClose }: Props) {
                             />
                         </div>
                     </div>
+
+                    {/* Max Concurrent Tasks */}
+                    <div className="form-control">
+                        <label className="label"><span className="label-text">最大并发数 (批量分析)</span></label>
+                        <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            className="input input-bordered input-sm w-full focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow"
+                            value={config.max_concurrent_tasks || 3}
+                            onChange={(e) => setConfig({ ...config, max_concurrent_tasks: Math.max(1, parseInt(e.target.value) || 3) })}
+                        />
+                    </div>
+
+                    {/* Context Injection */}
+                    <div className="form-control mt-4">
+                        <label className="label pb-0">
+                            <div className="relative group inline-block">
+                                <span className="label-text font-medium cursor-help border-b border-dashed border-base-content/50">上下文注入</span>
+                                <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-[100] w-64 sm:w-[280px] p-3 bg-base-200 text-base-content text-xs rounded-lg shadow-xl border border-base-300">
+                                    <h3 className="font-bold mb-1">提示</h3>
+                                    <p className="whitespace-normal break-words leading-relaxed">
+                                        开启上下文可极大增强 AI 对剧情连贯性的理解，但会增加 Token 消耗。<br /><br />
+                                        选择“全部已有章节”时，将会把之前所有章节的剧情摘要拼接附上，篇幅较长的小说可能会占用较长上下文。
+                                    </p>
+                                </div>
+                            </div>
+                        </label>
+                        <select
+                            className="select select-bordered select-sm w-full mt-2 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow"
+                            value={config.context_injection_mode || 'None'}
+                            onChange={(e) => setConfig({ ...config, context_injection_mode: e.target.value as any })}
+                        >
+                            <option value="None">无</option>
+                            <option value="PreviousChapter">上一章节</option>
+                            <option value="AllPrevious">全部已有章节</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div className="flex justify-end gap-2 p-4 border-t border-base-300 shrink-0 bg-base-200 rounded-b-2xl">
@@ -220,7 +280,7 @@ export default function LlmConfigModal({ onClose }: Props) {
                         保存
                     </button>
                 </div>
-            </div>
+            </motion.div>
         </div>,
         document.body
     );

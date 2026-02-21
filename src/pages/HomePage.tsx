@@ -6,6 +6,20 @@ import { Plus, BookOpen, Trash2, FileText } from 'lucide-react';
 import EpubPreviewModal from '../components/EpubPreviewModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import type { EpubPreview } from '../types';
+import { AnimatePresence, motion, Variants } from 'framer-motion';
+
+const containerVariants: Variants = {
+    hidden: { opacity: 0 },
+    show: {
+        opacity: 1,
+        transition: { staggerChildren: 0.05 }
+    }
+};
+
+const itemVariants: Variants = {
+    hidden: { opacity: 0, y: 15 },
+    show: { opacity: 1, y: 0, transition: { type: 'spring', bounce: 0, duration: 0.4 } }
+};
 
 export default function HomePage() {
     const { novels, fetchNovels, previewEpub, importEpubSelected, importSingleTxt, importTxtFiles, deleteNovel, selectNovel } = useNovelStore();
@@ -107,9 +121,15 @@ export default function HomePage() {
                             </div>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <motion.div
+                            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                            variants={containerVariants}
+                            initial="hidden"
+                            animate="show"
+                        >
                             {novels.map((novel) => (
-                                <div
+                                <motion.div
+                                    variants={itemVariants}
                                     key={novel.id}
                                     className="card bg-base-200 border border-base-300 hover:border-primary/50 cursor-pointer transition-all duration-200 hover:shadow-lg"
                                     onClick={() => handleOpen(novel.id)}
@@ -148,34 +168,38 @@ export default function HomePage() {
                                             {new Date(novel.created_at).toLocaleDateString('zh-CN')}
                                         </p>
                                     </div>
-                                </div>
+                                </motion.div>
                             ))}
-                        </div>
+                        </motion.div>
                     )}
                 </div>
             </div>
 
-            {epubPreview && (
-                <EpubPreviewModal
-                    preview={epubPreview}
-                    onConfirm={handleEpubConfirm}
-                    onCancel={() => setEpubPreview(null)}
-                />
-            )}
+            <AnimatePresence>
+                {epubPreview && (
+                    <EpubPreviewModal
+                        preview={epubPreview}
+                        onConfirm={handleEpubConfirm}
+                        onCancel={() => setEpubPreview(null)}
+                    />
+                )}
+            </AnimatePresence>
 
-            {novelToDelete && (
-                <ConfirmDialog
-                    title="删除小说"
-                    message={`确定要删除《${novelToDelete.title}》及其所有分析数据吗？删除后无法恢复。`}
-                    confirmText="删除"
-                    kind="error"
-                    onConfirm={async () => {
-                        await deleteNovel(novelToDelete.id);
-                        setNovelToDelete(null);
-                    }}
-                    onCancel={() => setNovelToDelete(null)}
-                />
-            )}
+            <AnimatePresence>
+                {novelToDelete && (
+                    <ConfirmDialog
+                        title="删除小说"
+                        message={`确定要删除《${novelToDelete.title}》及其所有分析数据吗？删除后无法恢复。`}
+                        confirmText="删除"
+                        kind="error"
+                        onConfirm={async () => {
+                            await deleteNovel(novelToDelete.id);
+                            setNovelToDelete(null);
+                        }}
+                        onCancel={() => setNovelToDelete(null)}
+                    />
+                )}
+            </AnimatePresence>
         </>
     );
 }

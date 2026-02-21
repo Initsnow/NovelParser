@@ -5,6 +5,8 @@ pub fn generate_chapter_prompt(
     title: &str,
     content: &str,
     dimensions: &[AnalysisDimension],
+    previous_context: Option<&str>,
+    forbid_callbacks: bool,
 ) -> String {
     let mut prompt = String::new();
 
@@ -13,6 +15,15 @@ pub fn generate_chapter_prompt(
     prompt.push_str("分析应当基于文本证据，避免泛泛而谈。每个维度都有一个 insights 字段，请在其中写出你最深刻的洞察。\n");
     prompt.push_str("请返回 JSON 格式。\n\n");
 
+    if let Some(ctx) = previous_context {
+        prompt.push_str("## 前情提要 (Context)\n\n");
+        prompt.push_str(
+            "你可以参考以下前文信息来辅助分析本章的内容，保持对剧情连贯性和人物状态的理解：\n",
+        );
+        prompt.push_str(ctx);
+        prompt.push_str("\n\n");
+    }
+
     prompt.push_str(&format!("## 章节：{}\n\n", title));
     prompt.push_str(content);
     prompt.push_str("\n\n");
@@ -20,12 +31,12 @@ pub fn generate_chapter_prompt(
     prompt.push_str("## 分析维度\n\n");
     for dim in dimensions {
         prompt.push_str(&format!("### {}\n", dim.display_name()));
-        prompt.push_str(dimension_instruction(dim));
+        prompt.push_str(dimension_instruction(dim, forbid_callbacks));
         prompt.push_str("\n\n");
     }
 
     prompt.push_str("## 输出 JSON 结构\n\n");
-    prompt.push_str(&generate_json_schema(dimensions));
+    prompt.push_str(&generate_json_schema(dimensions, forbid_callbacks));
 
     prompt
 }
@@ -37,6 +48,8 @@ pub fn generate_segment_prompt(
     segment_index: usize,
     total_segments: usize,
     dimensions: &[AnalysisDimension],
+    previous_context: Option<&str>,
+    forbid_callbacks: bool,
 ) -> String {
     let mut prompt = String::new();
 
@@ -44,6 +57,16 @@ pub fn generate_segment_prompt(
         "你是一位资深的文学评论家。请分析以下小说章节片段，注意这只是完整章节的一部分。\n",
     );
     prompt.push_str("分析应基于文本证据。请返回 JSON 格式。\n\n");
+
+    if let Some(ctx) = previous_context {
+        prompt.push_str("## 前情提要 (Context)\n\n");
+        prompt.push_str(
+            "你可以参考以下前文信息来辅助分析本章的内容，保持对剧情连贯性和人物状态的理解：\n",
+        );
+        prompt.push_str(ctx);
+        prompt.push_str("\n\n");
+    }
+
     prompt.push_str(&format!(
         "## 章节：{} (第 {} 段，共 {} 段)\n\n",
         title,
@@ -56,12 +79,12 @@ pub fn generate_segment_prompt(
     prompt.push_str("## 分析维度\n\n");
     for dim in dimensions {
         prompt.push_str(&format!("### {}\n", dim.display_name()));
-        prompt.push_str(dimension_instruction(dim));
+        prompt.push_str(dimension_instruction(dim, forbid_callbacks));
         prompt.push_str("\n\n");
     }
 
     prompt.push_str("## 输出 JSON 结构\n\n");
-    prompt.push_str(&generate_json_schema(dimensions));
+    prompt.push_str(&generate_json_schema(dimensions, forbid_callbacks));
 
     prompt
 }
@@ -132,7 +155,7 @@ pub fn generate_manual_full_summary_prompt(
     prompt
 }
 
-fn dimension_instruction(dim: &AnalysisDimension) -> &'static str {
+fn dimension_instruction(dim: &AnalysisDimension, forbid_callbacks: bool) -> &'static str {
     match dim {
         AnalysisDimension::Characters => {
             "梳理本章出场的所有人物。对每个人物，判断其在故事中的分量（主角/配角/龙套），\
@@ -144,9 +167,15 @@ fn dimension_instruction(dim: &AnalysisDimension) -> &'static str {
              又引发了什么后果。点明本章的核心冲突是什么，以及作者在章末留下了哪些悬念。"
         }
         AnalysisDimension::Foreshadowing => {
-            "寻找作者在本章埋下的伏笔和暗示——那些看似不经意但可能在后文有重要作用的细节。\
-             如果本章某些情节呼应了前面章节的铺垫，也请指出。\
-             标注本章的剧情转折点，以及章末是否留有引人继续阅读的钩子。"
+            if forbid_callbacks {
+                "寻找作者在本章新埋下的伏笔和暗示——那些看似不经意但可能在后文有重要作用的细节。\
+                 **注意：在此模式下你无法看到前文，请勿猜测或虚构本章呼应了哪些前文伏笔，避免产生幻觉。**\
+                 标注本章的剧情转折点，以及章末是否留有引人继续阅读的钩子。"
+            } else {
+                "寻找作者在本章埋下的伏笔和暗示——那些看似不经意但可能在后文有重要作用的细节。\
+                 如果本章某些情节呼应了前面章节的铺垫，也请指出。\
+                 标注本章的剧情转折点，以及章末是否留有引人继续阅读的钩子。"
+            }
         }
         AnalysisDimension::WritingTechnique => {
             "分析作者的叙事策略：使用的是第几人称？全知还是限知视角？\
@@ -173,7 +202,7 @@ fn dimension_instruction(dim: &AnalysisDimension) -> &'static str {
     }
 }
 
-fn generate_json_schema(dimensions: &[AnalysisDimension]) -> String {
+fn generate_json_schema(dimensions: &[AnalysisDimension], forbid_callbacks: bool) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     for dim in dimensions {
@@ -195,13 +224,23 @@ fn generate_json_schema(dimensions: &[AnalysisDimension]) -> String {
   }"#
             }
             AnalysisDimension::Foreshadowing => {
-                r#""foreshadowing": {
+                if forbid_callbacks {
+                    r#""foreshadowing": {
+    "setups": [{"content": "伏笔内容", "chapter_ref": null}],
+    "callbacks": [],
+    "turning_points": ["转折点1"],
+    "cliffhangers": ["悬念1"],
+    "insights": "对作者新伏笔和叙事张力的评价（不要产生对前文的幻觉）"
+  }"#
+                } else {
+                    r#""foreshadowing": {
     "setups": [{"content": "伏笔内容", "chapter_ref": null}],
     "callbacks": [{"content": "呼应内容", "chapter_ref": "第X章"}],
     "turning_points": ["转折点1"],
     "cliffhangers": ["悬念1"],
     "insights": "对作者伏笔技巧和叙事张力的评价"
   }"#
+                }
             }
             AnalysisDimension::WritingTechnique => {
                 r#""writing_technique": {

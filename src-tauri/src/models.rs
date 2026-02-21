@@ -167,6 +167,35 @@ pub struct ChapterAnalysis {
     pub worldbuilding: Option<WorldbuildingAnalysis>,
 }
 
+impl ChapterAnalysis {
+    pub fn to_context_string(&self) -> String {
+        let mut context = String::new();
+
+        if let Some(plot) = &self.plot {
+            context.push_str(&format!("本章剧情：{}\n", plot.summary));
+            if !plot.suspense.is_empty() {
+                context.push_str(&format!("遗留悬念：{}\n", plot.suspense.join("；")));
+            }
+        }
+
+        if let Some(chars) = &self.characters {
+            let names: Vec<_> = chars.characters.iter().map(|c| c.name.as_str()).collect();
+            if !names.is_empty() {
+                context.push_str(&format!("出场人物：{}\n", names.join("，")));
+            }
+        }
+
+        if let Some(foreshadowing) = &self.foreshadowing {
+            let cliffhangers = &foreshadowing.cliffhangers;
+            if !cliffhangers.is_empty() {
+                context.push_str(&format!("末尾悬念：{}\n", cliffhangers.join("；")));
+            }
+        }
+
+        context
+    }
+}
+
 // ---- Dimension-specific structures ----
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -331,6 +360,8 @@ pub struct WorldElement {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NovelSummary {
+    #[serde(default = "default_created_at")]
+    pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub overall_plot: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -343,6 +374,10 @@ pub struct NovelSummary {
     pub worldbuilding: Option<String>,
 }
 
+fn default_created_at() -> String {
+    chrono::Utc::now().to_rfc3339()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterArc {
     pub name: String,
@@ -351,30 +386,55 @@ pub struct CharacterArc {
 
 // ---- LLM Config ----
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ContextInjectionMode {
+    None,
+    PreviousChapter,
+    AllPrevious,
+}
+
+impl Default for ContextInjectionMode {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmConfig {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
-    pub max_context_tokens: i32,
-    #[serde(default = "default_max_output_tokens")]
-    pub max_output_tokens: Option<u32>,
+    pub max_context_tokens: u32,
+    #[serde(default = "default_chapter_max_tokens")]
+    pub chapter_max_tokens: Option<u32>,
+    #[serde(default = "default_summary_max_tokens")]
+    pub summary_max_tokens: Option<u32>,
     pub temperature: f32,
+    pub max_concurrent_tasks: u32,
+    #[serde(default)]
+    pub context_injection_mode: ContextInjectionMode,
 }
 
-fn default_max_output_tokens() -> Option<u32> {
+fn default_chapter_max_tokens() -> Option<u32> {
     Some(8192)
+}
+
+fn default_summary_max_tokens() -> Option<u32> {
+    Some(16384)
 }
 
 impl Default for LlmConfig {
     fn default() -> Self {
         Self {
             base_url: "https://api.openai.com/v1".to_string(),
-            api_key: String::new(),
+            api_key: "".to_string(),
             model: "gpt-4o".to_string(),
-            max_context_tokens: 1000000,
-            max_output_tokens: Some(8192),
-            temperature: 0.7,
+            max_context_tokens: 128000,
+            chapter_max_tokens: Some(8192),
+            summary_max_tokens: Some(16384),
+            temperature: 0.3,
+            max_concurrent_tasks: 3,
+            context_injection_mode: ContextInjectionMode::None,
         }
     }
 }

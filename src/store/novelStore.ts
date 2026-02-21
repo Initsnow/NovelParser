@@ -51,11 +51,12 @@ interface NovelStore {
     fetchSummary: () => Promise<void>;
     generateFullSummary: (novelId: string) => Promise<void>;
     getFullSummaryManualPrompt: (novelId: string) => Promise<string>;
-    parseManualFullSummaryResult: (json: string) => Promise<NovelSummary>;
+    parseManualFullSummaryResult: (json: string, novelId?: string) => Promise<NovelSummary>;
     fetchModels: () => Promise<void>;
     setAnalysisMode: (mode: AnalysisMode) => void;
     setError: (error: string | null) => void;
     clearSelection: () => void;
+    clearNovelSummary: (novelId: string) => Promise<void>;
     batchAnalyzeNovel: (novelId: string) => Promise<void>;
     batchAnalyzeChapters: (novelId: string, chapterIds: number[]) => Promise<void>;
     cancelBatch: () => Promise<void>;
@@ -72,8 +73,10 @@ export const useNovelStore = create<NovelStore>((set, get) => ({
         api_key: '',
         model: 'gpt-4o',
         max_context_tokens: 128000,
-        max_output_tokens: 4096,
+        chapter_max_tokens: 8192,
+        summary_max_tokens: 16384,
         temperature: 0.3,
+        max_concurrent_tasks: 3,
     },
     analysisMode: 'manual',
     dimensions: [],
@@ -343,7 +346,7 @@ export const useNovelStore = create<NovelStore>((set, get) => ({
         return invoke<string>('get_full_summary_manual_prompt', { novelId });
     },
 
-    parseManualFullSummaryResult: async (json) => {
+    parseManualFullSummaryResult: async (json, novelId) => {
         const text = json.trim();
         const start = text.indexOf('{');
         const end = text.lastIndexOf('}');
@@ -353,14 +356,26 @@ export const useNovelStore = create<NovelStore>((set, get) => ({
         const cleanJson = text.substring(start, end + 1);
         try {
             const parsed = JSON.parse(cleanJson) as NovelSummary;
+            parsed.created_at = new Date().toISOString();
             set({ novelSummary: parsed });
-            // For manual mode, we also want to save it to DB, but generateFullSummary normally does it on backend.
-            // Oh, wait, the user can just view it for now, and if they switch novels, it will be lost unless saved.
-            // But there is no backend `save_novel_summary` API exposed currently. I'll need to add it or just let the store hold it.
-            // Actually I should add a save_summary step later. For now, updating the store is enough because the app doesn't wipe easily unless refreshed.
+
+            if (novelId) {
+                await invoke('save_novel_summary', { novelId, summary: parsed });
+            }
+
             return parsed;
         } catch (e) {
             throw new Error("JSON 解析失败: " + String(e));
+        }
+    },
+
+    clearNovelSummary: async (novelId) => {
+        try {
+            await invoke('clear_novel_summary', { novelId });
+            set({ novelSummary: null });
+        } catch (e) {
+            console.error('Failed to clear novel summary:', e);
+            throw e;
         }
     },
 

@@ -2,6 +2,7 @@ import { Outlet, NavLink } from 'react-router-dom';
 import { BookOpen, Settings, Home, Sun, Moon } from 'lucide-react';
 import { useNovelStore } from '../../store/novelStore';
 import { useEffect, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import LlmConfigModal from '../../components/LlmConfigModal';
 
 export default function AppLayout() {
@@ -84,7 +85,9 @@ export default function AppLayout() {
             </main>
 
             {/* LLM Config Modal */}
-            {showConfig && <LlmConfigModal onClose={() => setShowConfig(false)} />}
+            <AnimatePresence>
+                {showConfig && <LlmConfigModal onClose={() => setShowConfig(false)} />}
+            </AnimatePresence>
         </div>
     );
 }

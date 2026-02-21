@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useNovelStore } from '../store/novelStore';
 import { ArrowLeft, BookOpen, Download } from 'lucide-react';
-import { save } from '@tauri-apps/plugin-dialog';
+import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 export default function SummaryPage() {
     const { novelId } = useParams<{ novelId: string }>();
@@ -11,6 +12,8 @@ export default function SummaryPage() {
         currentNovel, novelSummary, selectNovel, fetchSummary,
         generateFullSummary, loading, progress, chapters, fetchChapters
     } = useNovelStore();
+
+    const [exportAlert, setExportAlert] = useState<{ title: string, msg: string, kind: 'info' | 'error' } | null>(null);
 
     useEffect(() => {
         if (novelId) {
@@ -30,15 +33,18 @@ export default function SummaryPage() {
 
     const handleExport = async () => {
         try {
-            const path = await save({
-                filters: [{ name: 'Markdown', extensions: ['md'] }],
-                defaultPath: `${currentNovel.title}分析报告.md`
+            const dirPath = await open({
+                directory: true,
+                multiple: false,
+                title: '选择导出目录'
             });
-            if (path) {
-                await invoke('export_novel_report', { novelId: currentNovel.id, path });
+            if (dirPath) {
+                await invoke('export_novel_report', { novelId: currentNovel.id, dirPath: dirPath as string });
+                setExportAlert({ title: '导出成功', msg: `已成功将分析报告导出至:\n${dirPath}`, kind: 'info' });
             }
         } catch (e) {
             console.error('Export failed:', e);
+            setExportAlert({ title: '错误', msg: `导出失败: ${e}`, kind: 'error' });
         }
     };
 
@@ -65,9 +71,17 @@ export default function SummaryPage() {
                         生成全书汇总
                     </button>
                     {novelSummary && (
-                        <button className="btn btn-secondary" onClick={handleExport}>
-                            <Download size={16} /> 导出报告
-                        </button>
+                        <>
+                            <button className="btn btn-secondary" onClick={handleExport}>
+                                <Download size={16} /> 导出报告
+                            </button>
+                            <button
+                                className="btn btn-error btn-outline"
+                                onClick={async () => await useNovelStore.getState().clearNovelSummary(currentNovel.id)}
+                            >
+                                清除分析
+                            </button>
+                        </>
                     )}
                 </div>
 
@@ -159,6 +173,17 @@ export default function SummaryPage() {
                     </div>
                 )}
             </div>
+
+            {exportAlert && (
+                <ConfirmDialog
+                    title={exportAlert.title}
+                    message={exportAlert.msg}
+                    kind={exportAlert.kind}
+                    hideCancel={true}
+                    onConfirm={() => setExportAlert(null)}
+                    onCancel={() => setExportAlert(null)}
+                />
+            )}
         </div>
     );
 }

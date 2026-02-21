@@ -2,6 +2,7 @@ import type { ChapterAnalysis, AnalysisDimension } from '../types';
 import {
     Users, BookOpen, Sparkles, PenTool, Palette, Heart, Building, Globe,
 } from 'lucide-react';
+import { motion, Variants } from 'framer-motion';
 
 interface Props {
     analysis: ChapterAnalysis;
@@ -20,10 +21,30 @@ const DIMENSION_CONFIG: Record<AnalysisDimension, { icon: React.ReactNode; label
     worldbuilding: { icon: <Globe size={16} />, label: '世界观设定', color: 'badge-neutral' },
 };
 
+const containerVariants: Variants = {
+    hidden: { opacity: 0 },
+    show: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.1
+        }
+    }
+};
+
+const itemVariants: Variants = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0, transition: { type: "spring", bounce: 0, duration: 0.5 } }
+};
+
 export default function ChapterAnalysisView({ analysis, dimensions, chapterTitle }: Props) {
     return (
-        <div className="space-y-6 max-w-3xl mx-auto">
-            <h2 className="text-xl font-bold">{chapterTitle}</h2>
+        <motion.div
+            className="space-y-6 max-w-3xl mx-auto"
+            variants={containerVariants}
+            initial="hidden"
+            animate="show"
+        >
+            <motion.h2 variants={itemVariants} className="text-xl font-bold">{chapterTitle}</motion.h2>
 
             {/* Characters */}
             {analysis.characters && dimensions.includes('characters') && (
@@ -250,7 +271,7 @@ export default function ChapterAnalysisView({ analysis, dimensions, chapterTitle
                     {analysis.worldbuilding.insights && <InsightBlock text={analysis.worldbuilding.insights} />}
                 </AnalysisSection>
             )}
-        </div>
+        </motion.div>
     );
 }
 
@@ -259,7 +280,7 @@ export default function ChapterAnalysisView({ analysis, dimensions, chapterTitle
 function AnalysisSection({ dim, children }: { dim: AnalysisDimension; children: React.ReactNode }) {
     const cfg = DIMENSION_CONFIG[dim];
     return (
-        <div className="card bg-base-200 border border-base-300">
+        <motion.div variants={itemVariants} className="card bg-base-200 border border-base-300">
             <div className="card-body p-4">
                 <div className="flex items-center gap-2 mb-3">
                     {cfg.icon}
@@ -267,7 +288,7 @@ function AnalysisSection({ dim, children }: { dim: AnalysisDimension; children: 
                 </div>
                 {children}
             </div>
-        </div>
+        </motion.div>
     );
 }
 
