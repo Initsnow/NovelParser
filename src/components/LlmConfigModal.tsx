@@ -236,13 +236,19 @@ export default function LlmConfigModal({ onClose }: Props) {
 
                     {/* Max Concurrent Tasks */}
                     <div className="form-control">
-                        <label className="label"><span className="label-text">最大并发数 (批量分析)</span></label>
+                        <label className="label">
+                            <span className="label-text">最大并发数 (批量分析)</span>
+                            {config.context_injection_mode !== 'None' && (
+                                <span className="label-text-alt text-warning">开启上下文时必须单线程</span>
+                            )}
+                        </label>
                         <input
                             type="number"
                             min="1"
                             max="20"
-                            className="input input-bordered input-sm w-full focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow"
+                            className="input input-bordered input-sm w-full focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow disabled:opacity-50 disabled:cursor-not-allowed"
                             value={config.max_concurrent_tasks || 3}
+                            disabled={config.context_injection_mode !== 'None'}
                             onChange={(e) => setConfig({ ...config, max_concurrent_tasks: Math.max(1, parseInt(e.target.value) || 3) })}
                         />
                     </div>
@@ -256,7 +262,7 @@ export default function LlmConfigModal({ onClose }: Props) {
                                     <h3 className="font-bold mb-1">提示</h3>
                                     <p className="whitespace-normal break-words leading-relaxed">
                                         开启上下文可极大增强 AI 对剧情连贯性的理解，但会增加 Token 消耗。<br /><br />
-                                        选择“全部已有章节”时，将会把之前所有章节的剧情摘要拼接附上，篇幅较长的小说可能会占用较长上下文。
+                                        注意：开启上下文注入时，批量分析将强制改为单线程（串行）执行，以确保上下文按顺序生成。
                                     </p>
                                 </div>
                             </div>
@@ -264,7 +270,14 @@ export default function LlmConfigModal({ onClose }: Props) {
                         <select
                             className="select select-bordered select-sm w-full mt-2 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm transition-shadow"
                             value={config.context_injection_mode || 'None'}
-                            onChange={(e) => setConfig({ ...config, context_injection_mode: e.target.value as any })}
+                            onChange={(e) => {
+                                const mode = e.target.value as any;
+                                setConfig({
+                                    ...config,
+                                    context_injection_mode: mode,
+                                    max_concurrent_tasks: mode !== 'None' ? 1 : (llmConfig.max_concurrent_tasks || 3)
+                                });
+                            }}
                         >
                             <option value="None">无</option>
                             <option value="PreviousChapter">上一章节</option>

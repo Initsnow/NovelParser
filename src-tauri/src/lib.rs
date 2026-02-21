@@ -217,13 +217,13 @@ fn build_context_string(
                 return Ok(None);
             }
 
-            for (idx, prev) in &all_prev {
+            for (_, title, prev) in &all_prev {
                 if let Some(plot) = &prev.plot {
-                    context.push_str(&format!("第 {} 章摘要：{}\n", idx + 1, plot.summary));
+                    context.push_str(&format!("{} 摘要：{}\n", title, plot.summary));
                 }
             }
 
-            if let Some((_, last)) = all_prev.last() {
+            if let Some((_, _, last)) = all_prev.last() {
                 context.push_str("\n【最近一章详细状态】\n");
                 context.push_str(&last.to_context_string());
             }
@@ -460,6 +460,12 @@ async fn batch_analyze_novel(
     use futures::StreamExt;
     let completed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
+    let concurrency = if config.context_injection_mode != ContextInjectionMode::None {
+        1
+    } else {
+        config.max_concurrent_tasks as usize
+    };
+
     let mut futures = futures::stream::iter(unanalyzed.into_iter().map(|meta| {
         let app = app.clone();
         let db = &state.db;
@@ -526,7 +532,7 @@ async fn batch_analyze_novel(
             }
         }
     }))
-    .buffer_unordered(config.max_concurrent_tasks as usize);
+    .buffer_unordered(concurrency);
 
     while let Some(res) = futures.next().await {
         match res {
@@ -598,6 +604,12 @@ async fn batch_analyze_chapters(
     use futures::StreamExt;
     let completed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
+    let concurrency = if config.context_injection_mode != ContextInjectionMode::None {
+        1
+    } else {
+        config.max_concurrent_tasks as usize
+    };
+
     let mut futures = futures::stream::iter(metas.into_iter().map(|meta| {
         let app = app.clone();
         let db = &state.db;
@@ -664,7 +676,7 @@ async fn batch_analyze_chapters(
             }
         }
     }))
-    .buffer_unordered(config.max_concurrent_tasks as usize);
+    .buffer_unordered(concurrency);
 
     while let Some(res) = futures.next().await {
         match res {

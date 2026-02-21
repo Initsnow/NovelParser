@@ -254,34 +254,34 @@ impl Database {
         }
     }
 
-    pub fn load_all_previous_analyses(
-        &self,
-        novel_id: &str,
-        current_index: usize,
-    ) -> Result<Vec<(usize, ChapterAnalysis)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT chapter_index, analysis FROM chapters 
-             WHERE novel_id = ?1 AND chapter_index < ?2 AND analysis IS NOT NULL 
-             ORDER BY chapter_index ASC",
-        )?;
-
-        let results = stmt.query_map(params![novel_id, current_index as i64], |row| {
-            let index: i64 = row.get(0)?;
-            let analysis_str: String = row.get(1)?;
-            let analysis: Option<ChapterAnalysis> = serde_json::from_str(&analysis_str).ok();
-            Ok((index as usize, analysis))
-        })?;
-
-        let mut analyses = Vec::new();
-        for res in results {
-            if let Ok((index, Some(analysis))) = res {
-                analyses.push((index, analysis));
+        pub fn load_all_previous_analyses(
+            &self,
+            novel_id: &str,
+            current_index: usize,
+        ) -> Result<Vec<(usize, String, ChapterAnalysis)>> {
+            let mut stmt = self.conn.prepare(
+                "SELECT chapter_index, title, analysis FROM chapters
+                 WHERE novel_id = ?1 AND chapter_index < ?2 AND analysis IS NOT NULL
+                 ORDER BY chapter_index ASC",
+            )?;
+    
+            let results = stmt.query_map(params![novel_id, current_index as i64], |row| {
+                let index: i64 = row.get(0)?;
+                let title: String = row.get(1)?;
+                let analysis_str: String = row.get(2)?;
+                let analysis: Option<ChapterAnalysis> = serde_json::from_str(&analysis_str).ok();
+                Ok((index as usize, title, analysis))
+            })?;
+    
+            let mut analyses = Vec::new();
+            for res in results {
+                if let Ok((index, title, Some(analysis))) = res {
+                    analyses.push((index, title, analysis));
+                }
             }
+    
+            Ok(analyses)
         }
-
-        Ok(analyses)
-    }
-
     // ---- Novel Summary ----
 
     pub fn save_novel_summary(&self, novel_id: &str, summary: &NovelSummary) -> Result<()> {
