@@ -77,6 +77,7 @@ export const useNovelStore = create<NovelStore>((set, get) => ({
         summary_max_tokens: 16384,
         temperature: 0.3,
         max_concurrent_tasks: 3,
+        context_injection_mode: 'None',
     },
     analysisMode: 'manual',
     dimensions: [],
