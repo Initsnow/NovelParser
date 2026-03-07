@@ -221,7 +221,6 @@ export interface ProgressEvent {
 export interface StreamingEvent {
   chapter_id: number;
   chunk: string;
-  full_content: string;
 }
 
 // ---- EPUB Preview ----

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNovelStore } from '../store/novelStore';
+import { useNovelStore } from '../store/index';
 import { Copy, Check, Send, AlertTriangle } from 'lucide-react';
 
 interface Props {

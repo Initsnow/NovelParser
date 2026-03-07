@@ -1,215 +1,18 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useNovelStore } from '../store/novelStore';
+import { useNovelStore } from '../store/index';
 import ChapterAnalysisView from '../components/ChapterAnalysisView';
 import ManualPromptPanel from '../components/ManualPromptPanel';
-import FullBookManualPromptPanel from '../components/FullBookManualPromptPanel';
 import DimensionSelector from '../components/DimensionSelector';
+import { BatchTimeStats } from '../components/BatchTimeStats';
+import StreamingJsonViewer from '../components/StreamingJsonViewer';
+import FullBookSummaryView from '../components/FullBookSummaryView';
 import { Play, CheckCircle, Circle, ChevronRight, Zap, ClipboardCopy, Settings2, Trash2, ListChecks, X, Download } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 
-const formatTime = (ms: number) => {
-    const s = Math.floor(ms / 1000);
-    if (s < 60) return `${s}s`;
-    const m = Math.floor(s / 60);
-    return `${m}m ${s % 60}s`;
-};
 
-function BatchTimeStats({ startTime, current, total }: { startTime: number, current: number, total: number }) {
-    const [now, setNow] = useState(Date.now());
-
-    useEffect(() => {
-        const interval = setInterval(() => setNow(Date.now()), 1000);
-        return () => clearInterval(interval);
-    }, []);
-
-    const elapsedMs = now - startTime;
-    const estimatedTotalMs = current > 0 ? (elapsedMs / current) * total : 0;
-    const remainingMs = Math.max(0, estimatedTotalMs - elapsedMs);
-
-    return (
-        <div className="text-[10px] text-base-content/60 flex justify-between">
-            <span>已用: {formatTime(elapsedMs)}</span>
-            <span>预计剩余: {current > 0 ? formatTime(remainingMs) : '计算中...'}</span>
-        </div>
-    );
-}
-
-function StreamingJsonViewer({ content }: { content: string }) {
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const [autoScroll, setAutoScroll] = useState(true);
-
-    const handleScroll = () => {
-        if (!scrollRef.current) return;
-        const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-        const isAtBottom = scrollHeight - scrollTop - clientHeight < 10;
-        setAutoScroll(isAtBottom);
-    };
-
-    useEffect(() => {
-        if (autoScroll && scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-    }, [content, autoScroll]);
-
-    return (
-        <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
-            <div
-                ref={scrollRef}
-                onScroll={handleScroll}
-                className="flex-1 bg-base-300/30 rounded-lg p-4 font-mono text-sm overflow-y-auto whitespace-pre-wrap border border-base-300 shadow-inner"
-            >
-                {content || <span className="text-base-content/30 italic">等待模型响应...</span>}
-            </div>
-            {!autoScroll && (
-                <button
-                    className="absolute bottom-4 right-4 btn btn-xs btn-primary shadow-lg opacity-90"
-                    onClick={() => {
-                        setAutoScroll(true);
-                        if (scrollRef.current) {
-                            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-                        }
-                    }}
-                >
-                    ↓ 回到最新
-                </button>
-            )}
-        </div>
-    );
-}
-
-function FullBookSummaryView({ novelId }: { novelId: string }) {
-    const { novelSummary, generateFullSummary, loading, chapters, analysisMode } = useNovelStore();
-    const analyzedCount = chapters.filter(c => c.has_analysis).length;
-
-    useEffect(() => {
-        useNovelStore.getState().fetchSummary();
-    }, [novelId]);
-
-    const handleGenerate = async () => {
-        try {
-            await generateFullSummary(novelId);
-        } catch (e) {
-            console.error(e);
-        }
-    };
-
-    if (loading) {
-        return (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4">
-                <span className="loading loading-spinner text-primary loading-lg"></span>
-                <p className="text-base-content/60">正在生成全书总结，预计耗时较长，请耐心等待...</p>
-            </div>
-        );
-    }
-
-    if (!novelSummary) {
-        return (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center max-w-md mx-auto">
-                <div className="bg-base-200 rounded-box p-8 border border-base-300 shadow-sm w-full">
-                    <h2 className="text-xl font-bold mb-4">全书分析总结</h2>
-                    <p className="text-base-content/70 mb-6 text-sm">
-                        根据当前已分析的 {analyzedCount} 个章节（共 {chapters.length} 章），生成整本书籍的剧情脉络、人物关系及主题分析。<br />
-                        建议在大部分章节分析完成后再生成。
-                    </p>
-                    {analysisMode === 'api' ? (
-                        <>
-                            <button
-                                className="btn btn-primary w-full"
-                                onClick={handleGenerate}
-                                disabled={analyzedCount === 0}
-                            >
-                                <Zap size={18} />
-                                {analyzedCount > 0 ? '生成全书总结' : '需先分析部分章节'}
-                            </button>
-                            {analyzedCount === 0 && (
-                                <p className="text-error text-xs mt-3">至少需要分析一个章节才能生成汇总</p>
-                            )}
-                        </>
-                    ) : (
-                        <div className="text-left mt-4 border-t border-base-300 pt-4">
-                            {analyzedCount > 0 ? (
-                                <FullBookManualPromptPanel novelId={novelId} />
-                            ) : (
-                                <p className="text-error text-center text-sm">至少需要分析一个章节才能生成汇总</p>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <div className="flex-1 overflow-y-auto bg-base-100 p-8">
-            <div className="max-w-4xl mx-auto space-y-8">
-                <div className="flex justify-between items-end border-b border-base-300 pb-4">
-                    <div>
-                        <h1 className="text-3xl font-bold font-serif mb-2">全书脉络分析</h1>
-                        <p className="text-sm text-base-content/50">
-                            生成时间: {new Date(novelSummary.created_at).toLocaleString()}
-                        </p>
-                    </div>
-                    <div className="flex gap-2">
-                        <button
-                            className="btn btn-outline btn-sm btn-error"
-                            onClick={async () => await useNovelStore.getState().clearNovelSummary(novelId)}
-                        >
-                            清除分析
-                        </button>
-                        <button
-                            className="btn btn-outline btn-sm"
-                            onClick={handleGenerate}
-                        >
-                            <Zap size={14} /> 重新生成
-                        </button>
-                    </div>
-                </div>
-
-                <div className="prose prose-sm md:prose-base max-w-none">
-                    <h3>主要剧情与结局走势</h3>
-                    <p className="whitespace-pre-line bg-base-200/50 p-4 rounded-xl border border-base-300">
-                        {novelSummary.overall_plot || "暂无"}
-                    </p>
-
-                    <h3 className="mt-8">核心主题</h3>
-                    {novelSummary.themes && novelSummary.themes.length > 0 ? (
-                        <ul className="bg-base-200/50 p-4 rounded-xl border border-base-300">
-                            {novelSummary.themes.map((t, i) => <li key={i}>{t}</li>)}
-                        </ul>
-                    ) : (
-                        <p className="whitespace-pre-line bg-base-200/50 p-4 rounded-xl border border-base-300">暂无</p>
-                    )}
-
-                    <h3 className="mt-8">人物成长线</h3>
-                    {novelSummary.character_arcs && novelSummary.character_arcs.length > 0 ? (
-                        <div className="space-y-4">
-                            {novelSummary.character_arcs.map((arc, i) => (
-                                <div key={i} className="bg-base-200/50 p-4 rounded-xl border border-base-300">
-                                    <strong>{arc.name}</strong>: {arc.arc}
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p className="whitespace-pre-line bg-base-200/50 p-4 rounded-xl border border-base-300">暂无</p>
-                    )}
-
-                    <h3 className="mt-8">写作风格</h3>
-                    <p className="whitespace-pre-line bg-base-200/50 p-4 rounded-xl border border-base-300">
-                        {novelSummary.writing_style || "暂无"}
-                    </p>
-
-                    <h3 className="mt-8">世界观设定</h3>
-                    <p className="whitespace-pre-line bg-base-200/50 p-4 rounded-xl border border-base-300">
-                        {novelSummary.worldbuilding || "暂无"}
-                    </p>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 export default function NovelPage() {
     const { novelId } = useParams<{ novelId: string }>();
@@ -242,15 +45,15 @@ export default function NovelPage() {
         fetchDimensions();
     }, [novelId]);
 
-    if (!currentNovel) {
-        return <div className="flex-1 flex items-center justify-center"><span className="loading loading-spinner loading-lg" /></div>;
-    }
-
     useEffect(() => {
         if (!batchProgress || batchProgress.status === 'batch_done' || batchProgress.status === 'batch_cancelled') {
             setIsCancelling(false);
         }
     }, [batchProgress?.status]);
+
+    if (!currentNovel) {
+        return <div className="flex-1 flex items-center justify-center"><span className="loading loading-spinner loading-lg" /></div>;
+    }
 
     const handleAnalyze = async (chapterId: number) => {
         try {

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNovelStore } from '../store/novelStore';
+import { useNovelStore } from '../store/index';
 import type { AnalysisDimension } from '../types';
 
 export default function DimensionSelector() {

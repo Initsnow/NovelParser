@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNovelStore } from '../store/novelStore';
+import { useNovelStore } from '../store/index';
 import type { LlmConfig } from '../types';
 import { X, Save, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';

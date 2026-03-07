@@ -124,6 +124,40 @@ impl Database {
         Ok(results)
     }
 
+    /// Atomically save a novel and all its chapters in a single transaction.
+    pub fn save_novel_with_chapters(
+        &self,
+        novel: &Novel,
+        chapters: Vec<(String, String)>,
+    ) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+
+        let source_type_json = serde_json::to_string(&novel.source_type).unwrap_or_default();
+        let dims_json = serde_json::to_string(&novel.enabled_dimensions).unwrap_or_default();
+        tx.execute(
+            "INSERT OR REPLACE INTO novels (id, title, source_type, enabled_dimensions, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                novel.id,
+                novel.title,
+                source_type_json,
+                dims_json,
+                novel.created_at
+            ],
+        )?;
+
+        for (i, (chapter_title, content)) in chapters.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO chapters (novel_id, chapter_index, title, content, analysis)
+                 VALUES (?1, ?2, ?3, ?4, NULL)",
+                params![novel.id, i as i64, chapter_title, content],
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn delete_novel(&self, id: &str) -> Result<()> {
         self.conn
             .execute("DELETE FROM novels WHERE id = ?1", params![id])?;
@@ -254,34 +288,34 @@ impl Database {
         }
     }
 
-        pub fn load_all_previous_analyses(
-            &self,
-            novel_id: &str,
-            current_index: usize,
-        ) -> Result<Vec<(usize, String, ChapterAnalysis)>> {
-            let mut stmt = self.conn.prepare(
-                "SELECT chapter_index, title, analysis FROM chapters
+    pub fn load_all_previous_analyses(
+        &self,
+        novel_id: &str,
+        current_index: usize,
+    ) -> Result<Vec<(usize, String, ChapterAnalysis)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT chapter_index, title, analysis FROM chapters
                  WHERE novel_id = ?1 AND chapter_index < ?2 AND analysis IS NOT NULL
                  ORDER BY chapter_index ASC",
-            )?;
-    
-            let results = stmt.query_map(params![novel_id, current_index as i64], |row| {
-                let index: i64 = row.get(0)?;
-                let title: String = row.get(1)?;
-                let analysis_str: String = row.get(2)?;
-                let analysis: Option<ChapterAnalysis> = serde_json::from_str(&analysis_str).ok();
-                Ok((index as usize, title, analysis))
-            })?;
-    
-            let mut analyses = Vec::new();
-            for res in results {
-                if let Ok((index, title, Some(analysis))) = res {
-                    analyses.push((index, title, analysis));
-                }
+        )?;
+
+        let results = stmt.query_map(params![novel_id, current_index as i64], |row| {
+            let index: i64 = row.get(0)?;
+            let title: String = row.get(1)?;
+            let analysis_str: String = row.get(2)?;
+            let analysis: Option<ChapterAnalysis> = serde_json::from_str(&analysis_str).ok();
+            Ok((index as usize, title, analysis))
+        })?;
+
+        let mut analyses = Vec::new();
+        for res in results {
+            if let Ok((index, title, Some(analysis))) = res {
+                analyses.push((index, title, analysis));
             }
-    
-            Ok(analyses)
         }
+
+        Ok(analyses)
+    }
     // ---- Novel Summary ----
 
     pub fn save_novel_summary(&self, novel_id: &str, summary: &NovelSummary) -> Result<()> {
@@ -378,5 +412,125 @@ impl Database {
             params![novel_id],
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn setup_test_db() -> Database {
+        let dir = tempdir().unwrap();
+        Database::new(&dir.path().to_path_buf()).unwrap()
+    }
+
+    #[test]
+    fn test_init_tables() {
+        let db = setup_test_db();
+        // init_tables is called in new(), so we can just check if we can query
+        db.conn.execute("SELECT 1 FROM novels LIMIT 1", []).unwrap();
+        db.conn
+            .execute("SELECT 1 FROM chapters LIMIT 1", [])
+            .unwrap();
+    }
+
+    #[test]
+    fn test_save_and_load_novel() {
+        let db = setup_test_db();
+        let novel = Novel {
+            id: "test_novel_1".to_string(),
+            title: "Test Novel".to_string(),
+            source_type: SourceType::SingleTxt("fake.txt".to_string()),
+            enabled_dimensions: AnalysisDimension::default_set(),
+            created_at: "2023-01-01T00:00:00Z".to_string(),
+        };
+
+        db.save_novel(&novel).unwrap();
+
+        let loaded = db.load_novel("test_novel_1").unwrap();
+        assert_eq!(loaded.title, "Test Novel");
+        assert_eq!(
+            loaded.enabled_dimensions.len(),
+            AnalysisDimension::default_set().len()
+        );
+    }
+
+    #[test]
+    fn test_save_novel_with_chapters() {
+        let db = setup_test_db();
+        let novel = Novel {
+            id: "test_novel_2".to_string(),
+            title: "Batch Novel".to_string(),
+            source_type: SourceType::SingleTxt("fake.txt".to_string()),
+            enabled_dimensions: AnalysisDimension::default_set(),
+            created_at: "2023-01-01T00:00:00Z".to_string(),
+        };
+
+        let chapters = vec![
+            ("Chapter 1".to_string(), "Content 1".to_string()),
+            ("Chapter 2".to_string(), "Content 2".to_string()),
+            ("Chapter 3".to_string(), "Content 3".to_string()),
+        ];
+
+        db.save_novel_with_chapters(&novel, chapters).unwrap();
+
+        let loaded_novel = db.load_novel("test_novel_2").unwrap();
+        assert_eq!(loaded_novel.title, "Batch Novel");
+
+        let metas = db.list_chapter_metas("test_novel_2").unwrap();
+        assert_eq!(metas.len(), 3);
+        assert_eq!(metas[0].title, "Chapter 1");
+        assert_eq!(metas[1].title, "Chapter 2");
+        assert_eq!(metas[2].title, "Chapter 3");
+
+        let content = db.load_chapter_content(metas[1].id).unwrap();
+        assert_eq!(content, "Content 2");
+    }
+
+    #[test]
+    fn test_chapter_analysis_crud() {
+        let db = setup_test_db();
+        let novel = Novel {
+            id: "test_novel_3".to_string(),
+            title: "Analysis Novel".to_string(),
+            source_type: SourceType::SingleTxt("fake.txt".to_string()),
+            enabled_dimensions: AnalysisDimension::default_set(),
+            created_at: "2023-01-01T00:00:00Z".to_string(),
+        };
+
+        let chapters = vec![("Chapter 1".to_string(), "C1".to_string())];
+        db.save_novel_with_chapters(&novel, chapters).unwrap();
+
+        let metas = db.list_chapter_metas("test_novel_3").unwrap();
+        let ch_id = metas[0].id;
+
+        // Has no analysis originally
+        let loaded = db.load_chapter(ch_id).unwrap();
+        assert!(loaded.analysis.is_none());
+
+        // Save analysis
+        let mut analysis = ChapterAnalysis::default();
+        analysis.plot = Some(PlotAnalysis {
+            summary: "Test Summary".to_string(),
+            key_events: vec![],
+            conflicts: vec![],
+            suspense: vec![],
+            insights: None,
+        });
+        db.save_chapter_analysis(ch_id, &analysis).unwrap();
+
+        // Verify analysis saved
+        let loaded2 = db.load_chapter(ch_id).unwrap();
+        assert!(loaded2.analysis.is_some());
+        assert_eq!(
+            loaded2.analysis.unwrap().plot.unwrap().summary,
+            "Test Summary"
+        );
+
+        // Clear analysis
+        db.clear_chapter_analysis(ch_id).unwrap();
+        let loaded3 = db.load_chapter(ch_id).unwrap();
+        assert!(loaded3.analysis.is_none());
     }
 }

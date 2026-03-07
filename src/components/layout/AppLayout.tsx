@@ -1,6 +1,6 @@
 import { Outlet, NavLink } from 'react-router-dom';
 import { BookOpen, Settings, Home, Sun, Moon } from 'lucide-react';
-import { useNovelStore } from '../../store/novelStore';
+import { useNovelStore } from '../../store/index';
 import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import LlmConfigModal from '../../components/LlmConfigModal';

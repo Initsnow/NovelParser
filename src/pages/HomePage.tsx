@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useNovelStore } from '../store/novelStore';
+import { useNovelStore } from '../store/index';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Plus, BookOpen, Trash2, FileText } from 'lucide-react';
 import EpubPreviewModal from '../components/EpubPreviewModal';

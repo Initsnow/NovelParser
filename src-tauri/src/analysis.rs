@@ -1,4 +1,5 @@
 use crate::models::*;
+use std::sync::OnceLock;
 
 /// Parse LLM JSON response into a ChapterAnalysis struct.
 /// Includes tolerance for common LLM output issues (markdown fences, trailing commas).
@@ -104,9 +105,51 @@ pub fn merge_segment_analyses(segments: Vec<ChapterAnalysis>) -> ChapterAnalysis
             existing.cliffhangers.extend(fore.cliffhangers);
         }
 
-        // For other dimensions, take the first non-None value or the last one
-        if seg.writing_technique.is_some() {
-            merged.writing_technique = seg.writing_technique;
+        // Merge writing_technique (combine string fields)
+        if let Some(wt) = seg.writing_technique {
+            let existing =
+                merged
+                    .writing_technique
+                    .get_or_insert_with(|| WritingTechniqueAnalysis {
+                        narrative_perspective: String::new(),
+                        time_sequence: String::new(),
+                        pacing: String::new(),
+                        structural_notes: String::new(),
+                        insights: None,
+                    });
+            if !wt.narrative_perspective.is_empty() {
+                if !existing.narrative_perspective.is_empty() {
+                    existing.narrative_perspective.push_str("; ");
+                }
+                existing
+                    .narrative_perspective
+                    .push_str(&wt.narrative_perspective);
+            }
+            if !wt.time_sequence.is_empty() {
+                if !existing.time_sequence.is_empty() {
+                    existing.time_sequence.push_str("; ");
+                }
+                existing.time_sequence.push_str(&wt.time_sequence);
+            }
+            if !wt.pacing.is_empty() {
+                if !existing.pacing.is_empty() {
+                    existing.pacing.push_str("; ");
+                }
+                existing.pacing.push_str(&wt.pacing);
+            }
+            if !wt.structural_notes.is_empty() {
+                if !existing.structural_notes.is_empty() {
+                    existing.structural_notes.push_str("; ");
+                }
+                existing.structural_notes.push_str(&wt.structural_notes);
+            }
+            if let Some(ins) = wt.insights {
+                let e = existing.insights.get_or_insert_with(String::new);
+                if !e.is_empty() {
+                    e.push(' ');
+                }
+                e.push_str(&ins);
+            }
         }
         if seg.rhetoric.is_some() {
             let existing = merged.rhetoric.get_or_insert_with(|| RhetoricAnalysis {
@@ -140,8 +183,38 @@ pub fn merge_segment_analyses(segments: Vec<ChapterAnalysis>) -> ChapterAnalysis
                     .extend(emo.atmosphere_techniques.clone());
             }
         }
-        if seg.themes.is_some() {
-            merged.themes = seg.themes;
+        // Merge themes (combine lists)
+        if let Some(th) = seg.themes {
+            let existing = merged.themes.get_or_insert_with(|| ThemesAnalysis {
+                motifs: Vec::new(),
+                values: Vec::new(),
+                social_commentary: None,
+                insights: None,
+            });
+            for motif in th.motifs {
+                if !existing.motifs.contains(&motif) {
+                    existing.motifs.push(motif);
+                }
+            }
+            for val in th.values {
+                if !existing.values.contains(&val) {
+                    existing.values.push(val);
+                }
+            }
+            if let Some(sc) = th.social_commentary {
+                let e = existing.social_commentary.get_or_insert_with(String::new);
+                if !e.is_empty() {
+                    e.push(' ');
+                }
+                e.push_str(&sc);
+            }
+            if let Some(ins) = th.insights {
+                let e = existing.insights.get_or_insert_with(String::new);
+                if !e.is_empty() {
+                    e.push(' ');
+                }
+                e.push_str(&ins);
+            }
         }
         if seg.worldbuilding.is_some() {
             let existing = merged
@@ -184,7 +257,8 @@ pub fn clean_json_response(raw: &str) -> String {
     s = s.trim().to_string();
 
     // Remove trailing commas before } or ]
-    let re = regex::Regex::new(r",(\s*[}\]])").unwrap();
+    static TRAILING_COMMA_RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = TRAILING_COMMA_RE.get_or_init(|| regex::Regex::new(r",(\s*[}\]])").unwrap());
     s = re.replace_all(&s, "$1").to_string();
 
     s

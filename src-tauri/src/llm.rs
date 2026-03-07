@@ -11,6 +11,46 @@ use async_openai::{
 use futures::StreamExt;
 use tauri::Emitter;
 
+const SYSTEM_PROMPT: &str =
+    "你是一位专业的文学分析助手。请严格按照用户要求返回 JSON 格式，不要添加任何额外文本。";
+
+/// Build a configured OpenAI client and chat completion request.
+fn build_client_and_request(
+    config: &LlmConfig,
+    prompt: &str,
+    max_output: Option<u32>,
+) -> Result<
+    (
+        Client<OpenAIConfig>,
+        async_openai::types::CreateChatCompletionRequest,
+    ),
+    String,
+> {
+    let openai_config = OpenAIConfig::new()
+        .with_api_base(&config.base_url)
+        .with_api_key(&config.api_key);
+    let client = Client::with_config(openai_config);
+
+    let mut builder = CreateChatCompletionRequestArgs::default();
+    builder
+        .model(&config.model)
+        .temperature(config.temperature)
+        .messages(vec![
+            ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage::from(
+                SYSTEM_PROMPT,
+            )),
+            ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage::from(prompt)),
+        ]);
+
+    builder.max_tokens(max_output.unwrap_or(8192));
+
+    let request = builder
+        .build()
+        .map_err(|e| format!("构建请求失败: {}", e))?;
+
+    Ok((client, request))
+}
+
 /// List available models from an OpenAI-compatible API.
 pub async fn list_models(config: &LlmConfig) -> Result<Vec<String>, String> {
     let mut url = config.base_url.trim_end_matches('/').to_string();
@@ -52,13 +92,12 @@ pub async fn list_models(config: &LlmConfig) -> Result<Vec<String>, String> {
     Ok(model_ids)
 }
 
-/// Call an OpenAI-compatible API with the given prompt.
+/// Call an OpenAI-compatible API with the given prompt (non-streaming).
 pub async fn call_api(
     config: &LlmConfig,
     prompt: &str,
     max_output: Option<u32>,
 ) -> Result<String, String> {
-    // Token check
     let prompt_tokens = estimate_tokens(prompt);
     let max_tokens = config.max_context_tokens as usize;
     if prompt_tokens > max_tokens {
@@ -68,48 +107,14 @@ pub async fn call_api(
         ));
     }
 
-    // Configure client
-    let openai_config = OpenAIConfig::new()
-        .with_api_base(&config.base_url)
-        .with_api_key(&config.api_key);
+    let (client, request) = build_client_and_request(config, prompt, max_output)?;
 
-    let client = Client::with_config(openai_config);
-
-    // Build request
-    let mut builder = CreateChatCompletionRequestArgs::default();
-    builder
-        .model(&config.model)
-        .temperature(config.temperature)
-        .messages(vec![
-            ChatCompletionRequestMessage::System(
-                ChatCompletionRequestSystemMessage::from(
-                    "你是一位专业的文学分析助手。请严格按照用户要求返回 JSON 格式，不要添加任何额外文本。"
-                )
-            ),
-            ChatCompletionRequestMessage::User(
-                ChatCompletionRequestUserMessage::from(prompt)
-            ),
-        ]);
-
-    if let Some(mo) = max_output {
-        builder.max_tokens(mo);
-    } else {
-        // Fallback for max_output
-        builder.max_tokens(8192 as u32);
-    }
-
-    let request = builder
-        .build()
-        .map_err(|e| format!("构建请求失败: {}", e))?;
-
-    // Call API
     let response = client
         .chat()
         .create(request)
         .await
         .map_err(|e| format!("API 调用失败: {}", e))?;
 
-    // Extract content
     let content = response
         .choices
         .first()
@@ -120,7 +125,7 @@ pub async fn call_api(
     Ok(content)
 }
 
-/// Call API with streaming, emitting partial content via Tauri events.
+/// Call API with streaming, emitting incremental chunks via Tauri events.
 pub async fn call_api_stream(
     config: &LlmConfig,
     prompt: &str,
@@ -137,35 +142,7 @@ pub async fn call_api_stream(
         ));
     }
 
-    let openai_config = OpenAIConfig::new()
-        .with_api_base(&config.base_url)
-        .with_api_key(&config.api_key);
-    let client = Client::with_config(openai_config);
-
-    let mut builder = CreateChatCompletionRequestArgs::default();
-    builder
-        .model(&config.model)
-        .temperature(config.temperature)
-        .messages(vec![
-            ChatCompletionRequestMessage::System(
-                ChatCompletionRequestSystemMessage::from(
-                    "你是一位专业的文学分析助手。请严格按照用户要求返回 JSON 格式，不要添加任何额外文本。"
-                )
-            ),
-            ChatCompletionRequestMessage::User(
-                ChatCompletionRequestUserMessage::from(prompt)
-            ),
-        ]);
-
-    if let Some(mo) = max_output {
-        builder.max_tokens(mo);
-    } else {
-        builder.max_tokens(8192u32);
-    }
-
-    let request = builder
-        .build()
-        .map_err(|e| format!("构建请求失败: {}", e))?;
+    let (client, request) = build_client_and_request(config, prompt, max_output)?;
 
     let mut stream = client
         .chat()
@@ -181,12 +158,12 @@ pub async fn call_api_stream(
                 for choice in &response.choices {
                     if let Some(ref content) = choice.delta.content {
                         full_content.push_str(content);
+                        // Only send the incremental chunk, frontend accumulates
                         let _ = app.emit(
                             "analysis_streaming",
                             serde_json::json!({
                                 "chapter_id": chapter_id,
                                 "chunk": content,
-                                "full_content": full_content,
                             }),
                         );
                     }
