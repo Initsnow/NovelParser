@@ -7,7 +7,7 @@ interface Props {
 }
 
 export default function FullBookManualPromptPanel({ novelId }: Props) {
-    const { getFullSummaryManualPrompt, parseManualFullSummaryResult, llmConfig } = useNovelStore();
+    const { getFullSummaryManualPrompt, parseManualFullSummaryResult, llmConfig, currentNovel } = useNovelStore();
     const [prompt, setPrompt] = useState('');
     const [tokenCount, setTokenCount] = useState(0);
     const [responseJson, setResponseJson] = useState('');
@@ -17,7 +17,7 @@ export default function FullBookManualPromptPanel({ novelId }: Props) {
 
     useEffect(() => {
         loadPrompt();
-    }, [novelId]);
+    }, [novelId, currentNovel?.enabled_dimensions]);
 
     const loadPrompt = async () => {
         try {

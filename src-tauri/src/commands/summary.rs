@@ -44,6 +44,11 @@ pub fn get_full_summary_manual_prompt(
 }
 
 #[tauri::command]
+pub fn parse_manual_summary_result(json_str: String) -> Result<NovelSummary, String> {
+    analysis_mod::parse_summary_json(&json_str)
+}
+
+#[tauri::command]
 pub fn get_novel_summary(
     state: State<AppState>,
     novel_id: String,

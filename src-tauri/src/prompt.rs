@@ -12,8 +12,9 @@ pub fn generate_chapter_prompt(
 
     prompt.push_str("你是一位资深的文学评论家和小说研究者，拥有敏锐的文本洞察力。\n");
     prompt.push_str("请仔细阅读以下小说章节，进行深入、有见地的文学分析。\n");
+    prompt.push_str("【重要提取原则】实事求是：绝不无中生有。如果文中没有对应的元素（如无伏笔、转折、修辞等），请务必在相关的 JSON 数组字段保持为空数组 []，文本字段返回 null。绝不要为了填满 JSON 而强行捏造或过度解读。\n");
     prompt.push_str("分析应当基于文本证据，避免泛泛而谈。每个维度都有一个 insights 字段，请在其中写出你最深刻的洞察。\n");
-    prompt.push_str("请返回 JSON 格式。\n\n");
+    prompt.push_str("请严格返回 JSON 格式。\n\n");
 
     if let Some(ctx) = previous_context {
         prompt.push_str("## 前情提要 (Context)\n\n");
@@ -56,7 +57,8 @@ pub fn generate_segment_prompt(
     prompt.push_str(
         "你是一位资深的文学评论家。请分析以下小说章节片段，注意这只是完整章节的一部分。\n",
     );
-    prompt.push_str("分析应基于文本证据。请返回 JSON 格式。\n\n");
+    prompt.push_str("【重要提取原则】实事求是：绝不无中生有。如果文中没有对应的元素（如无伏笔、转折、修辞等），请务必在相关的 JSON 数组字段保持为空数组 []，文本字段返回 null。绝不要强行捏造。\n");
+    prompt.push_str("分析应基于文本证据。请严格返回 JSON 格式。\n\n");
 
     if let Some(ctx) = previous_context {
         prompt.push_str("## 前情提要 (Context)\n\n");
@@ -158,8 +160,7 @@ pub fn generate_manual_full_summary_prompt(
 fn dimension_instruction(dim: &AnalysisDimension, forbid_callbacks: bool) -> &'static str {
     match dim {
         AnalysisDimension::Characters => {
-            "梳理本章出场的所有人物。对每个人物，判断其在故事中的分量（主角/配角/龙套），\
-             概括其在本章中展现出的性格面貌和关键行为。\
+            "梳理本章出场的所有人物。对每个人物，概括其关键行为和性格特征，并标注其身份定位。\
              重点分析人物之间的关系网络——不仅标注关系类型，还要关注本章中关系是否发生了微妙的变化或转折。"
         }
         AnalysisDimension::Plot => {
@@ -209,7 +210,7 @@ fn generate_json_schema(dimensions: &[AnalysisDimension], forbid_callbacks: bool
         let schema = match dim {
             AnalysisDimension::Characters => {
                 r#""characters": {
-    "characters": [{"name": "姓名", "role": "主角/配角/龙套", "traits": ["特征1"], "actions": "行为描述"}],
+    "characters": [{"name": "姓名", "role": "身份/定位", "traits": ["特征1"], "actions": "行为描述"}],
     "relationships": [{"from": "人名A", "to": "人名B", "relation_type": "类型", "description": "描述", "change": "变化或null"}],
     "insights": "对本章人物塑造的整体评价和深层解读，可以自由发挥"
   }"#
@@ -218,8 +219,8 @@ fn generate_json_schema(dimensions: &[AnalysisDimension], forbid_callbacks: bool
                 r#""plot": {
     "summary": "剧情摘要",
     "key_events": [{"event": "事件描述", "cause": "原因或null", "effect": "影响或null"}],
-    "conflicts": ["冲突1"],
-    "suspense": ["悬念1"],
+    "conflicts": ["冲突描述"],
+    "suspense": ["悬念描述"],
     "insights": "对本章叙事策略、情节编排的深层解读"
   }"#
             }
@@ -228,16 +229,16 @@ fn generate_json_schema(dimensions: &[AnalysisDimension], forbid_callbacks: bool
                     r#""foreshadowing": {
     "setups": [{"content": "伏笔内容", "chapter_ref": null}],
     "callbacks": [],
-    "turning_points": ["转折点1"],
-    "cliffhangers": ["悬念1"],
+    "turning_points": ["转折点描述"],
+    "cliffhangers": ["悬念描述"],
     "insights": "对作者新伏笔和叙事张力的评价（不要产生对前文的幻觉）"
   }"#
                 } else {
                     r#""foreshadowing": {
     "setups": [{"content": "伏笔内容", "chapter_ref": null}],
     "callbacks": [{"content": "呼应内容", "chapter_ref": "第X章"}],
-    "turning_points": ["转折点1"],
-    "cliffhangers": ["悬念1"],
+    "turning_points": ["转折点描述"],
+    "cliffhangers": ["悬念描述"],
     "insights": "对作者伏笔技巧和叙事张力的评价"
   }"#
                 }
@@ -255,7 +256,7 @@ fn generate_json_schema(dimensions: &[AnalysisDimension], forbid_callbacks: bool
                 r#""rhetoric": {
     "devices": [{"name": "手法名", "example": "原文例句"}],
     "language_style": "语言风格描述",
-    "notable_quotes": ["佳句1"],
+    "notable_quotes": ["佳句摘抄"],
     "insights": "对本章语言艺术的整体鉴赏"
   }"#
             }
@@ -263,14 +264,14 @@ fn generate_json_schema(dimensions: &[AnalysisDimension], forbid_callbacks: bool
                 r#""emotion": {
     "overall_tone": "整体基调",
     "emotion_arc": [{"segment": "段落/场景", "emotion": "情绪类型", "intensity": "高/中/低"}],
-    "atmosphere_techniques": ["手法1"],
+    "atmosphere_techniques": ["氛围渲染手法"],
     "insights": "对情感表达的深入解读"
   }"#
             }
             AnalysisDimension::Themes => {
                 r#""themes": {
-    "motifs": ["母题1"],
-    "values": ["价值观1"],
+    "motifs": ["文中出现的核心意象/母题"],
+    "values": ["探讨的价值观"],
     "social_commentary": "社会议题或null",
     "insights": "对主题深度和思想内涵的评论"
   }"#
@@ -281,8 +282,8 @@ fn generate_json_schema(dimensions: &[AnalysisDimension], forbid_callbacks: bool
     "organizations": [{"name": "组织名", "description": "描述"}],
     "power_systems": ["力量体系"],
     "items": [{"name": "物品名", "description": "描述"}],
-    "rules": ["规则1"],
-    "insights": "对世界观构建的整体评价"
+    "rules": ["世界运作规则描述"],
+    "insights": "对本章世界观构建的整体评价"
   }"#
             }
         };

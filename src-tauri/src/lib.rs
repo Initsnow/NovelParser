@@ -71,6 +71,7 @@ pub fn run() {
             commands::summary::save_novel_summary,
             commands::summary::clear_novel_summary,
             commands::summary::generate_full_summary,
+            commands::summary::parse_manual_summary_result,
             commands::export::export_novel_report,
         ])
         .run(tauri::generate_context!())

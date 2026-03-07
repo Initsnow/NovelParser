@@ -35,7 +35,7 @@ export const createSummarySlice: StoreSlice<SummarySlice> = (set, get) => ({
     parseManualFullSummaryResult: async (json, novelId) => {
         set({ loading: true, error: null });
         try {
-            const summary = await invoke<NovelSummary>('parse_manual_result', { jsonStr: json });
+            const summary = await invoke<NovelSummary>('parse_manual_summary_result', { jsonStr: json });
             summary.created_at = new Date().toISOString();
 
             if (novelId) {

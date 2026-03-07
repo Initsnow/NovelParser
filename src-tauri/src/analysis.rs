@@ -26,6 +26,15 @@ pub fn parse_summary_json(json_str: &str) -> Result<NovelSummary, String> {
     })
 }
 
+fn append_string(existing: &mut String, new: &str, separator: &str) {
+    if !new.is_empty() {
+        if !existing.is_empty() {
+            existing.push_str(separator);
+        }
+        existing.push_str(new);
+    }
+}
+
 /// Merge multiple segment analyses into one combined analysis.
 pub fn merge_segment_analyses(segments: Vec<ChapterAnalysis>) -> ChapterAnalysis {
     let mut merged = ChapterAnalysis::default();
@@ -54,10 +63,7 @@ pub fn merge_segment_analyses(segments: Vec<ChapterAnalysis>) -> ChapterAnalysis
             }
             if let Some(ins) = chars.insights {
                 let e = existing.insights.get_or_insert_with(String::new);
-                if !e.is_empty() {
-                    e.push(' ');
-                }
-                e.push_str(&ins);
+                append_string(e, &ins, " ");
             }
         }
 
@@ -70,21 +76,13 @@ pub fn merge_segment_analyses(segments: Vec<ChapterAnalysis>) -> ChapterAnalysis
                 suspense: Vec::new(),
                 insights: None,
             });
-            if !plot.summary.is_empty() {
-                if !existing.summary.is_empty() {
-                    existing.summary.push_str(" ");
-                }
-                existing.summary.push_str(&plot.summary);
-            }
+            append_string(&mut existing.summary, &plot.summary, " ");
             existing.key_events.extend(plot.key_events);
             existing.conflicts.extend(plot.conflicts);
             existing.suspense.extend(plot.suspense);
             if let Some(ins) = plot.insights {
                 let e = existing.insights.get_or_insert_with(String::new);
-                if !e.is_empty() {
-                    e.push(' ');
-                }
-                e.push_str(&ins);
+                append_string(e, &ins, " ");
             }
         }
 
@@ -117,72 +115,51 @@ pub fn merge_segment_analyses(segments: Vec<ChapterAnalysis>) -> ChapterAnalysis
                         structural_notes: String::new(),
                         insights: None,
                     });
-            if !wt.narrative_perspective.is_empty() {
-                if !existing.narrative_perspective.is_empty() {
-                    existing.narrative_perspective.push_str("; ");
-                }
-                existing
-                    .narrative_perspective
-                    .push_str(&wt.narrative_perspective);
-            }
-            if !wt.time_sequence.is_empty() {
-                if !existing.time_sequence.is_empty() {
-                    existing.time_sequence.push_str("; ");
-                }
-                existing.time_sequence.push_str(&wt.time_sequence);
-            }
-            if !wt.pacing.is_empty() {
-                if !existing.pacing.is_empty() {
-                    existing.pacing.push_str("; ");
-                }
-                existing.pacing.push_str(&wt.pacing);
-            }
-            if !wt.structural_notes.is_empty() {
-                if !existing.structural_notes.is_empty() {
-                    existing.structural_notes.push_str("; ");
-                }
-                existing.structural_notes.push_str(&wt.structural_notes);
-            }
+            append_string(
+                &mut existing.narrative_perspective,
+                &wt.narrative_perspective,
+                "; ",
+            );
+            append_string(&mut existing.time_sequence, &wt.time_sequence, "; ");
+            append_string(&mut existing.pacing, &wt.pacing, "; ");
+            append_string(&mut existing.structural_notes, &wt.structural_notes, "; ");
+
             if let Some(ins) = wt.insights {
                 let e = existing.insights.get_or_insert_with(String::new);
-                if !e.is_empty() {
-                    e.push(' ');
-                }
-                e.push_str(&ins);
+                append_string(e, &ins, " ");
             }
         }
-        if seg.rhetoric.is_some() {
+
+        if let Some(rhet) = seg.rhetoric {
             let existing = merged.rhetoric.get_or_insert_with(|| RhetoricAnalysis {
                 devices: Vec::new(),
                 language_style: String::new(),
                 notable_quotes: Vec::new(),
                 insights: None,
             });
-            if let Some(rhet) = seg.rhetoric.as_ref() {
-                existing.devices.extend(rhet.devices.clone());
-                if !rhet.language_style.is_empty() {
-                    existing.language_style = rhet.language_style.clone();
-                }
-                existing.notable_quotes.extend(rhet.notable_quotes.clone());
+            existing.devices.extend(rhet.devices);
+            if !rhet.language_style.is_empty() {
+                existing.language_style = rhet.language_style;
             }
+            existing.notable_quotes.extend(rhet.notable_quotes);
         }
-        if seg.emotion.is_some() {
+
+        if let Some(emo) = seg.emotion {
             let existing = merged.emotion.get_or_insert_with(|| EmotionAnalysis {
                 overall_tone: String::new(),
                 emotion_arc: Vec::new(),
                 atmosphere_techniques: Vec::new(),
                 insights: None,
             });
-            if let Some(emo) = seg.emotion.as_ref() {
-                if !emo.overall_tone.is_empty() {
-                    existing.overall_tone = emo.overall_tone.clone();
-                }
-                existing.emotion_arc.extend(emo.emotion_arc.clone());
-                existing
-                    .atmosphere_techniques
-                    .extend(emo.atmosphere_techniques.clone());
+            if !emo.overall_tone.is_empty() {
+                existing.overall_tone = emo.overall_tone;
             }
+            existing.emotion_arc.extend(emo.emotion_arc);
+            existing
+                .atmosphere_techniques
+                .extend(emo.atmosphere_techniques);
         }
+
         // Merge themes (combine lists)
         if let Some(th) = seg.themes {
             let existing = merged.themes.get_or_insert_with(|| ThemesAnalysis {
@@ -191,32 +168,19 @@ pub fn merge_segment_analyses(segments: Vec<ChapterAnalysis>) -> ChapterAnalysis
                 social_commentary: None,
                 insights: None,
             });
-            for motif in th.motifs {
-                if !existing.motifs.contains(&motif) {
-                    existing.motifs.push(motif);
-                }
-            }
-            for val in th.values {
-                if !existing.values.contains(&val) {
-                    existing.values.push(val);
-                }
-            }
+            existing.motifs.extend(th.motifs);
+            existing.values.extend(th.values);
             if let Some(sc) = th.social_commentary {
                 let e = existing.social_commentary.get_or_insert_with(String::new);
-                if !e.is_empty() {
-                    e.push(' ');
-                }
-                e.push_str(&sc);
+                append_string(e, &sc, " ");
             }
             if let Some(ins) = th.insights {
                 let e = existing.insights.get_or_insert_with(String::new);
-                if !e.is_empty() {
-                    e.push(' ');
-                }
-                e.push_str(&ins);
+                append_string(e, &ins, " ");
             }
         }
-        if seg.worldbuilding.is_some() {
+
+        if let Some(wb) = seg.worldbuilding {
             let existing = merged
                 .worldbuilding
                 .get_or_insert_with(|| WorldbuildingAnalysis {
@@ -227,14 +191,19 @@ pub fn merge_segment_analyses(segments: Vec<ChapterAnalysis>) -> ChapterAnalysis
                     rules: Vec::new(),
                     insights: None,
                 });
-            if let Some(wb) = seg.worldbuilding.as_ref() {
-                existing.locations.extend(wb.locations.clone());
-                existing.organizations.extend(wb.organizations.clone());
-                existing.power_systems.extend(wb.power_systems.clone());
-                existing.items.extend(wb.items.clone());
-                existing.rules.extend(wb.rules.clone());
-            }
+            existing.locations.extend(wb.locations);
+            existing.organizations.extend(wb.organizations);
+            existing.power_systems.extend(wb.power_systems);
+            existing.items.extend(wb.items);
+            existing.rules.extend(wb.rules);
         }
+    }
+
+    if let Some(th) = &mut merged.themes {
+        th.motifs.sort_unstable();
+        th.motifs.dedup();
+        th.values.sort_unstable();
+        th.values.dedup();
     }
 
     merged

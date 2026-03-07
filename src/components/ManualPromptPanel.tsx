@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default function ManualPromptPanel({ chapterId, chapterTitle, onSuccess }: Props) {
-    const { generatePrompt, estimateTokens, parseManualResult, saveAnalysis, llmConfig } = useNovelStore();
+    const { generatePrompt, estimateTokens, parseManualResult, saveAnalysis, llmConfig, currentNovel } = useNovelStore();
     const [prompt, setPrompt] = useState('');
     const [tokenCount, setTokenCount] = useState(0);
     const [responseJson, setResponseJson] = useState('');
@@ -19,7 +19,7 @@ export default function ManualPromptPanel({ chapterId, chapterTitle, onSuccess }
 
     useEffect(() => {
         loadPrompt();
-    }, [chapterId]);
+    }, [chapterId, currentNovel?.enabled_dimensions]);
 
     const loadPrompt = async () => {
         try {

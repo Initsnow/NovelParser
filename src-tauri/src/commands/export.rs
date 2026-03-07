@@ -28,7 +28,10 @@ pub async fn export_novel_report(
 
     // Do file I/O outside the lock, in spawn_blocking to avoid blocking async runtime
     tokio::task::spawn_blocking(move || {
-        let folder_name = format!("《{}》分析报告", novel.title);
+        let safe_novel_title = novel
+            .title
+            .replace(&['/', '\\', ':', '*', '?', '"', '<', '>', '|'][..], "_");
+        let folder_name = format!("《{}》分析报告", safe_novel_title);
         let target_dir = std::path::Path::new(&dir_path).join(folder_name);
 
         if !target_dir.exists() {

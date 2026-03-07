@@ -141,11 +141,15 @@ cargo tauri build
 5. `ChapterAnalysisView.tsx`: 添加对应维度的渲染区块
 6. `DimensionSelector` 自动从 `get_all_dimensions` command 读取，无需改动
 
-## 已实现的重要功能 (Recent Features)
-- [x] 全书汇总的完整 command（树归约调用链与前端展示）
-- [x] 批量分析与多选批处理（一键分析/删除选取章节）
-- [x] 分析进度实时事件推送（Tauri events: `analysis_progress`, `batch_progress`）
-- [x] 导出报告（支持 Markdown 导出）
-- [x] 深色/浅色主题切换 UI (DaisyUI themes)
-- [x] 更精确的 EPUB 子章节层级合并 (TOC Flattening)
-- [x] 流式输出展示 (Streaming JSON) 与时间预估统计
+### 🤖 AI Agent 自动化工作流与提交规范
+作为 AI 助手，在协助开发本应用时，请**严格遵守**以下自动化流程，以保持开发的高效与代码库的整洁：
+
+1. **自动前置检查**：每次完成代码修改后，**务必主动**运行 `cargo check` 和 `npx tsc --noEmit`。若有对应的单元测试，主动运行 `cargo test`。
+2. **适时自动提交 (Auto-Commit)**：
+   - 当完成一个**完整的 Feature**、**一个重大的 Bug 修复**（如前面经历的 Path Traversal 或 SQLite 联级删除 Bug）、或**一项显著的代码重构**后，而且经过了上面的环境验证（编译无误）。
+   - **不要等待用户要求**，请**直接主动执行** `git add -A && git commit -m "..." && git push`。
+   - Commit Message 请严格使用 Conventional Commits 标准（如 `feat(ui): ...`, `fix(db): ...`, `refactor(llm): ...`），并在 Message 内部用英文简述修改的内容。
+   - 保持 Commit 的粒度：不要把几十个不相关的文件揉成一个 Commit，如果任务很大，请在各个子模块（如单独后端、单独前端）完成且测试通过后分批进行提交。
+3. **主动性 (Proactiveness)**：
+   - 发现存在冗余代码（如 `prompt.rs` 的大量重复注释），主动提出优化建议并在一次操作中完成清理。
+   - 如果遇到 TypeScript 缺少类型保护或 Rust 中隐式的 `unwrap()` 风险，可以一并进行安全性加固，随后作为一个 `chore` 或 `fix` 独立提交。

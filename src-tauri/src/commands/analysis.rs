@@ -150,7 +150,7 @@ pub(crate) async fn do_analyze_chapter(
     let prompt_tokens = token_utils::estimate_tokens(&prompt_text);
     let available = token_utils::calculate_available_tokens(&config, 0);
 
-    if prompt_tokens > available {
+    let analysis_result = if prompt_tokens > available {
         let content_budget = token_utils::calculate_available_tokens(&config, 500);
         let segments = token_utils::split_content_by_tokens(&chapter.content, content_budget);
         let mut segment_analyses = Vec::new();
@@ -201,13 +201,7 @@ pub(crate) async fn do_analyze_chapter(
             },
         );
 
-        let merged = analysis_mod::merge_segment_analyses(segment_analyses);
-
-        let db = db_mutex.lock().map_err(|e| e.to_string())?;
-        db.save_chapter_analysis(chapter_id, &merged)
-            .map_err(|e| e.to_string())?;
-
-        Ok(merged)
+        analysis_mod::merge_segment_analyses(segment_analyses)
     } else {
         let _ = app.emit(
             "analysis_progress",
@@ -229,14 +223,14 @@ pub(crate) async fn do_analyze_chapter(
             config.chapter_max_tokens,
         )
         .await?;
-        let analysis_result = analysis_mod::parse_analysis_json(&response)?;
+        analysis_mod::parse_analysis_json(&response)?
+    };
 
-        let db = db_mutex.lock().map_err(|e| e.to_string())?;
-        db.save_chapter_analysis(chapter_id, &analysis_result)
-            .map_err(|e| e.to_string())?;
+    let db = db_mutex.lock().map_err(|e| e.to_string())?;
+    db.save_chapter_analysis(chapter_id, &analysis_result)
+        .map_err(|e| e.to_string())?;
 
-        Ok(analysis_result)
-    }
+    Ok(analysis_result)
 }
 
 #[tauri::command]
