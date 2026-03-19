@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNovelStore } from '../store/index';
 import { Copy, Check, Send, AlertTriangle } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 
 interface Props {
     novelId: string;
@@ -21,12 +22,10 @@ export default function FullBookManualPromptPanel({ novelId }: Props) {
 
     const loadPrompt = async () => {
         try {
-            const [p] = await Promise.all([
-                getFullSummaryManualPrompt(novelId)
-            ]);
+            const p = await getFullSummaryManualPrompt(novelId);
+            const t = await invoke<number>('estimate_text_tokens', { text: p });
             setPrompt(p);
-            // Rough estimation for token count: length / 1.5 roughly for CJK models
-            setTokenCount(Math.ceil(p.length / 1.5));
+            setTokenCount(t);
             setResponseJson('');
             setParseError(null);
         } catch (e) {

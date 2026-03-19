@@ -5,6 +5,7 @@ import { createNovelSlice } from './slices/novelSlice';
 import { createChapterSlice } from './slices/chapterSlice';
 import { createAnalysisSlice } from './slices/analysisSlice';
 import { createSummarySlice } from './slices/summarySlice';
+import { createOutlineSlice } from './slices/outlineSlice';
 import { createSettingsSlice } from './slices/settingsSlice';
 import { createEventSlice } from './slices/eventSlice';
 
@@ -13,13 +14,14 @@ export const useNovelStore = create<StoreState>()((...a) => ({
     loading: false,
     error: null,
     setError: (error) => a[0]({ error }),
-    clearSelection: () => a[0]({ selectedChapter: null, novelSummary: null }),
+    clearSelection: () => a[0]({ selectedChapter: null, novelSummary: null, bookOutline: null }),
 
     // Combine all slices
     ...createNovelSlice(...a),
     ...createChapterSlice(...a),
     ...createAnalysisSlice(...a),
     ...createSummarySlice(...a),
+    ...createOutlineSlice(...a),
     ...createSettingsSlice(...a),
     ...createEventSlice(...a),
 }));

@@ -44,6 +44,8 @@ pub struct Chapter {
     pub title: String,
     pub content: String,
     pub analysis: Option<ChapterAnalysis>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outline: Option<ChapterOutline>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,7 +54,17 @@ pub struct ChapterMeta {
     pub index: usize,
     pub title: String,
     pub has_analysis: bool,
+    #[serde(default)]
+    pub has_outline: bool,
     pub token_estimate: usize,
+    #[serde(default)]
+    pub token_exact: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChapterTokenCount {
+    pub chapter_id: i64,
+    pub token_count: usize,
 }
 
 // ---- Events ----
@@ -382,6 +394,91 @@ fn default_created_at() -> String {
 pub struct CharacterArc {
     pub name: String,
     pub arc: String,
+}
+
+// ---- Outline ----
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ChapterOutline {
+    pub brief: String,
+    #[serde(default)]
+    pub detail: String,
+    #[serde(default = "default_created_at")]
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OutlineSegment {
+    pub title: String,
+    #[serde(default)]
+    pub volume_number: usize,
+    pub chapter_start: usize,
+    pub chapter_end: usize,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CharacterCard {
+    pub name: String,
+    pub lifecycle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_volume: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_volume: Option<usize>,
+    pub character_type: String,
+    #[serde(default)]
+    pub key_scenes: Vec<String>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub personality: String,
+    #[serde(default)]
+    pub core_drive: String,
+    #[serde(default)]
+    pub arc: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SceneCard {
+    pub name: String,
+    pub lifecycle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_volume: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_volume: Option<usize>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub story_function: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BookOutline {
+    #[serde(default = "default_created_at")]
+    pub created_at: String,
+    #[serde(default)]
+    pub logline: String,
+    #[serde(default)]
+    pub story_outline: String,
+    #[serde(default)]
+    pub world_setting: String,
+    #[serde(default)]
+    pub volumes: Vec<OutlineSegment>,
+    #[serde(default)]
+    pub character_cards: Vec<CharacterCard>,
+    #[serde(default)]
+    pub scene_cards: Vec<SceneCard>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutlineCacheEntry {
+    pub layer: i32,
+    pub group_index: i32,
+    pub chapter_start: usize,
+    pub chapter_end: usize,
+    pub content_hash: String,
+    pub outline: BookOutline,
+    pub created_at: String,
 }
 
 // ---- LLM Config ----

@@ -46,7 +46,9 @@ export interface ChapterMeta {
   index: number;
   title: string;
   has_analysis: boolean;
+  has_outline: boolean;
   token_estimate: number;
+  token_exact?: boolean;
 }
 
 export interface Chapter {
@@ -56,6 +58,7 @@ export interface Chapter {
   title: string;
   content: string;
   analysis: ChapterAnalysis | null;
+  outline?: ChapterOutline | null;
 }
 
 // ---- Analysis Types ----
@@ -189,6 +192,52 @@ export interface CharacterArc {
   arc: string;
 }
 
+export interface ChapterOutline {
+  brief: string;
+  detail?: string;
+  created_at: string;
+}
+
+export interface OutlineSegment {
+  title: string;
+  volume_number: number;
+  chapter_start: number;
+  chapter_end: number;
+  summary: string;
+}
+
+export interface CharacterCard {
+  name: string;
+  lifecycle: string;
+  first_volume?: number | null;
+  last_volume?: number | null;
+  character_type: string;
+  key_scenes: string[];
+  description: string;
+  personality: string;
+  core_drive: string;
+  arc: string;
+}
+
+export interface SceneCard {
+  name: string;
+  lifecycle: string;
+  first_volume?: number | null;
+  last_volume?: number | null;
+  description: string;
+  story_function: string;
+}
+
+export interface BookOutline {
+  created_at: string;
+  logline: string;
+  story_outline: string;
+  world_setting: string;
+  volumes: OutlineSegment[];
+  character_cards: CharacterCard[];
+  scene_cards: SceneCard[];
+}
+
 // ---- LLM Config ----
 
 export type ContextInjectionMode = 'None' | 'PreviousChapter' | 'AllPrevious';
@@ -205,7 +254,7 @@ export interface LlmConfig {
   context_injection_mode: ContextInjectionMode;
 }
 
-export type AnalysisMode = 'api' | 'manual';
+export type AnalysisMode = 'api' | 'manual' | 'outline';
 
 // ---- Events ----
 

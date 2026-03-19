@@ -9,6 +9,10 @@ export default function AppLayout() {
     const { currentNovel, error, setError, initEventListeners } = useNovelStore();
     const [showConfig, setShowConfig] = useState(false);
     const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'night');
+    const [fontScale, setFontScale] = useState<'sm' | 'md' | 'lg'>(() => {
+        const stored = localStorage.getItem('font_scale');
+        return stored === 'sm' || stored === 'lg' ? stored : 'md';
+    });
 
     useEffect(() => {
         initEventListeners();
@@ -18,6 +22,16 @@ export default function AppLayout() {
         localStorage.setItem('theme', theme);
         document.documentElement.setAttribute('data-theme', theme);
     }, [theme]);
+
+    useEffect(() => {
+        const sizeMap = {
+            sm: '14px',
+            md: '16px',
+            lg: '18px',
+        } as const;
+        localStorage.setItem('font_scale', fontScale);
+        document.documentElement.style.fontSize = sizeMap[fontScale];
+    }, [fontScale]);
 
     useEffect(() => {
         if (error) {
@@ -51,6 +65,30 @@ export default function AppLayout() {
                 )}
 
                 <div className="flex-1" />
+
+                <div className="join join-vertical">
+                    <button
+                        className={`join-item btn btn-ghost btn-xs ${fontScale === 'sm' ? 'btn-active' : ''}`}
+                        onClick={() => setFontScale('sm')}
+                        title="小字号"
+                    >
+                        A-
+                    </button>
+                    <button
+                        className={`join-item btn btn-ghost btn-xs ${fontScale === 'md' ? 'btn-active' : ''}`}
+                        onClick={() => setFontScale('md')}
+                        title="标准字号"
+                    >
+                        A
+                    </button>
+                    <button
+                        className={`join-item btn btn-ghost btn-xs ${fontScale === 'lg' ? 'btn-active' : ''}`}
+                        onClick={() => setFontScale('lg')}
+                        title="大字号"
+                    >
+                        A+
+                    </button>
+                </div>
 
                 <button
                     className="btn btn-ghost btn-square"

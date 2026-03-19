@@ -59,3 +59,49 @@ pub async fn export_novel_report(
     .await
     .map_err(|e| format!("导出任务失败: {}", e))?
 }
+
+#[tauri::command]
+pub async fn export_book_outline(
+    state: State<'_, AppState>,
+    novel_id: String,
+    dir_path: String,
+) -> Result<(), String> {
+    let (novel, book_outline, chapter_outlines) = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let novel = db.load_novel(&novel_id).map_err(|e| e.to_string())?;
+        let book_outline = db
+            .load_book_outline(&novel_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "当前没有可导出的全书提纲".to_string())?;
+        let chapter_outlines = db
+            .list_chapter_outlines(&novel_id)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|(_, index, title, _, outline)| (index, title, outline))
+            .collect::<Vec<_>>();
+        (novel, book_outline, chapter_outlines)
+    };
+
+    tokio::task::spawn_blocking(move || {
+        let safe_novel_title = novel
+            .title
+            .replace(&['/', '\\', ':', '*', '?', '"', '<', '>', '|'][..], "_");
+        let folder_name = format!("《{}》大纲导出", safe_novel_title);
+        let target_dir = std::path::Path::new(&dir_path).join(folder_name);
+
+        if !target_dir.exists() {
+            std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+        }
+
+        let book_md = export_mod::generate_book_outline_md(&novel, &book_outline);
+        std::fs::write(target_dir.join("book-outline.md"), book_md).map_err(|e| e.to_string())?;
+
+        let chapter_md = export_mod::generate_chapter_outlines_md(&novel, &chapter_outlines);
+        std::fs::write(target_dir.join("chapter-outlines.md"), chapter_md)
+            .map_err(|e| e.to_string())?;
+
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("导出任务失败: {}", e))?
+}

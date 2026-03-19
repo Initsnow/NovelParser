@@ -6,6 +6,12 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import ConfirmDialog from '../components/ConfirmDialog';
 
+function hasMeaningfulText(value?: string | null) {
+    if (!value) return false;
+    const normalized = value.trim().replace(/\s+/g, '');
+    return normalized !== '' && normalized !== '暂无' && normalized !== '无' && normalized !== '未提及' && normalized !== '世界观设定暂无';
+}
+
 export default function SummaryPage() {
     const { novelId } = useParams<{ novelId: string }>();
     const {
@@ -163,7 +169,7 @@ export default function SummaryPage() {
                             </div>
                         )}
 
-                        {novelSummary.worldbuilding && (
+                        {hasMeaningfulText(novelSummary.worldbuilding) && (
                             <div className="card bg-base-200 border border-base-300">
                                 <div className="card-body p-5">
                                     <h3 className="font-bold text-lg mb-2">🌍 世界观</h3>

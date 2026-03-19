@@ -3,5 +3,6 @@ pub mod batch;
 pub mod chapter;
 pub mod export;
 pub mod novel;
+pub mod outline;
 pub mod settings;
 pub mod summary;

@@ -5,6 +5,12 @@ import FullBookManualPromptPanel from '../components/FullBookManualPromptPanel';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { Zap } from 'lucide-react';
 
+function hasMeaningfulText(value?: string | null) {
+    if (!value) return false;
+    const normalized = value.trim().replace(/\s+/g, '');
+    return normalized !== '' && normalized !== '暂无' && normalized !== '无' && normalized !== '未提及' && normalized !== '世界观设定暂无';
+}
+
 export default function FullBookSummaryView({ novelId }: { novelId: string }) {
     const { novelSummary, generateFullSummary, loading, chapters, analysisMode } = useNovelStore();
     const analyzedCount = chapters.filter(c => c.has_analysis).length;
@@ -127,10 +133,14 @@ export default function FullBookSummaryView({ novelId }: { novelId: string }) {
                         {novelSummary.writing_style || "暂无"}
                     </p>
 
-                    <h3 className="mt-8">世界观设定</h3>
-                    <p className="whitespace-pre-line bg-base-200/50 p-4 rounded-xl border border-base-300">
-                        {novelSummary.worldbuilding || "暂无"}
-                    </p>
+                    {hasMeaningfulText(novelSummary.worldbuilding) && (
+                        <>
+                            <h3 className="mt-8">世界观设定</h3>
+                            <p className="whitespace-pre-line bg-base-200/50 p-4 rounded-xl border border-base-300">
+                                {novelSummary.worldbuilding}
+                            </p>
+                        </>
+                    )}
                 </div>
             </div>
             {confirmClearSummary && (

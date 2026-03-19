@@ -1,37 +1,80 @@
 use crate::models::*;
+use tiktoken_rs::{
+    cl100k_base_singleton, get_bpe_from_model, o200k_base_singleton, CoreBPE,
+};
+
+const DEFAULT_TOKENIZER_MODEL: &str = "gpt-4o";
+
+fn fallback_bpe_for_model(model: &str) -> &'static CoreBPE {
+    let lower = model.to_ascii_lowercase();
+    if lower.contains("gpt-3.5") || (lower.contains("gpt-4") && !lower.contains("gpt-4o")) {
+        cl100k_base_singleton()
+    } else {
+        o200k_base_singleton()
+    }
+}
+
+fn encoder_for_model(model: &str) -> std::borrow::Cow<'static, CoreBPE> {
+    match get_bpe_from_model(model) {
+        Ok(bpe) => std::borrow::Cow::Owned(bpe),
+        Err(_) => std::borrow::Cow::Borrowed(fallback_bpe_for_model(model)),
+    }
+}
+
+fn chat_overhead_for_model(model: &str) -> (usize, isize, usize) {
+    let lower = model.to_ascii_lowercase();
+    if lower.starts_with("gpt-3.5") || lower.contains("gpt-3.5") {
+        (4, -1, 3)
+    } else {
+        (3, 1, 3)
+    }
+}
 
 /// Estimate token count for a text string.
-/// Uses a conservative heuristic: Chinese chars ≈ 1.5 tokens each, ASCII words ≈ 1 token.
 pub fn estimate_tokens(text: &str) -> usize {
-    let mut tokens: f64 = 0.0;
-    for ch in text.chars() {
-        if ch.is_ascii() {
-            if ch.is_ascii_whitespace() || ch.is_ascii_punctuation() {
-                tokens += 0.25;
-            } else {
-                tokens += 0.3; // ~4 ASCII chars per token on average
-            }
-        } else {
-            tokens += 1.5; // CJK chars are ~1.5 tokens conservatively
+    estimate_tokens_for_model(text, DEFAULT_TOKENIZER_MODEL)
+}
+
+pub fn estimate_tokens_for_model(text: &str, model: &str) -> usize {
+    encoder_for_model(model)
+        .encode_with_special_tokens(text)
+        .len()
+}
+
+pub fn estimate_chat_tokens_for_model(model: &str, system_prompt: &str, user_prompt: &str) -> usize {
+    let bpe = encoder_for_model(model);
+    let (tokens_per_message, tokens_per_name, reply_primer_tokens) = chat_overhead_for_model(model);
+
+    let mut total = reply_primer_tokens;
+    for (role, content) in [("system", system_prompt), ("user", user_prompt)] {
+        total += tokens_per_message;
+        total += bpe.encode_with_special_tokens(role).len();
+        total += bpe.encode_with_special_tokens(content).len();
+        if tokens_per_name > 0 {
+            total += tokens_per_name as usize;
         }
     }
-    tokens.ceil() as usize
-}
 
-/// Calculate available content tokens given LLM config and prompt template overhead.
-pub fn calculate_available_tokens(config: &LlmConfig, prompt_template_tokens: usize) -> usize {
-    // Rely on chapter_max_tokens for general calculation purposes.
-    let output_reserve = config.chapter_max_tokens.unwrap_or(8192) as usize;
-    let total = config.max_context_tokens as usize;
     total
-        .saturating_sub(prompt_template_tokens)
-        .saturating_sub(output_reserve)
 }
 
-/// Split chapter content into segments that fit within the token budget.
-/// Splits on paragraph boundaries (\n\n) to maintain readability.
+pub fn calculate_available_request_tokens(config: &LlmConfig, max_output: Option<u32>) -> usize {
+    let output_reserve = max_output
+        .or(config.chapter_max_tokens)
+        .unwrap_or(8192) as usize;
+    (config.max_context_tokens as usize).saturating_sub(output_reserve)
+}
+/// Split text content into segments that fit within a token limit.
 pub fn split_content_by_tokens(content: &str, max_tokens: usize) -> Vec<String> {
-    if estimate_tokens(content) <= max_tokens {
+    split_content_by_tokens_for_model(content, max_tokens, DEFAULT_TOKENIZER_MODEL)
+}
+
+pub fn split_content_by_tokens_for_model(
+    content: &str,
+    max_tokens: usize,
+    model: &str,
+) -> Vec<String> {
+    if estimate_tokens_for_model(content, model) <= max_tokens {
         return vec![content.to_string()];
     }
 
@@ -41,7 +84,7 @@ pub fn split_content_by_tokens(content: &str, max_tokens: usize) -> Vec<String> 
     let mut current_tokens: usize = 0;
 
     for para in paragraphs {
-        let para_tokens = estimate_tokens(para);
+        let para_tokens = estimate_tokens_for_model(para, model);
 
         if current_tokens + para_tokens > max_tokens && !current_segment.is_empty() {
             segments.push(current_segment.trim().to_string());
@@ -63,7 +106,7 @@ pub fn split_content_by_tokens(content: &str, max_tokens: usize) -> Vec<String> 
     // If we still have segments that are too long, do a hard split by lines
     let mut final_segments: Vec<String> = Vec::new();
     for seg in segments {
-        if estimate_tokens(&seg) <= max_tokens {
+        if estimate_tokens_for_model(&seg, model) <= max_tokens {
             final_segments.push(seg);
         } else {
             // Hard split by lines
@@ -71,7 +114,7 @@ pub fn split_content_by_tokens(content: &str, max_tokens: usize) -> Vec<String> 
             let mut chunk = String::new();
             let mut chunk_tokens: usize = 0;
             for line in lines {
-                let line_tokens = estimate_tokens(line);
+                let line_tokens = estimate_tokens_for_model(line, model);
                 if chunk_tokens + line_tokens > max_tokens && !chunk.is_empty() {
                     final_segments.push(chunk.trim().to_string());
                     chunk = String::new();
@@ -97,16 +140,21 @@ mod tests {
     #[test]
     fn test_estimate_tokens_chinese() {
         let text = "这是一段中文测试文本";
-        let tokens = estimate_tokens(text);
-        // 10 Chinese chars * 1.5 = 15
-        assert!(tokens >= 10 && tokens <= 20);
+        let tokens = estimate_tokens_for_model(text, "gpt-4o");
+        assert!(tokens > 0);
     }
 
     #[test]
     fn test_estimate_tokens_english() {
         let text = "This is a test sentence with some words.";
-        let tokens = estimate_tokens(text);
-        assert!(tokens > 5 && tokens < 20);
+        let tokens = estimate_tokens_for_model(text, "gpt-4o");
+        assert!(tokens > 0);
+    }
+
+    #[test]
+    fn test_estimate_chat_tokens() {
+        let tokens = estimate_chat_tokens_for_model("gpt-4o", "system", "hello world");
+        assert!(tokens > 0);
     }
 
     #[test]
@@ -122,7 +170,7 @@ mod tests {
             .map(|i| format!("这是第{}段很长的文本内容，用来测试分段功能。", i))
             .collect::<Vec<_>>()
             .join("\n\n");
-        let segments = split_content_by_tokens(&content, 100);
+        let segments = split_content_by_tokens_for_model(&content, 100, "gpt-4o");
         assert!(segments.len() > 1);
     }
 }

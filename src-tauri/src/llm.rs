@@ -1,5 +1,5 @@
 use crate::models::LlmConfig;
-use crate::token_utils::estimate_tokens;
+use crate::token_utils::{calculate_available_request_tokens, estimate_chat_tokens_for_model};
 use async_openai::{
     config::OpenAIConfig,
     types::{
@@ -11,7 +11,7 @@ use async_openai::{
 use futures::StreamExt;
 use tauri::Emitter;
 
-const SYSTEM_PROMPT: &str =
+pub(crate) const SYSTEM_PROMPT: &str =
     "你是一位专业的文学分析助手。请严格按照用户要求返回 JSON 格式，不要添加任何额外文本。";
 
 /// Build a configured OpenAI client and chat completion request.
@@ -98,12 +98,16 @@ pub async fn call_api(
     prompt: &str,
     max_output: Option<u32>,
 ) -> Result<String, String> {
-    let prompt_tokens = estimate_tokens(prompt);
-    let max_tokens = config.max_context_tokens as usize;
-    if prompt_tokens > max_tokens {
+    let prompt_tokens = estimate_chat_tokens_for_model(config.model.as_str(), SYSTEM_PROMPT, prompt);
+    let available_tokens = calculate_available_request_tokens(config, max_output);
+    if prompt_tokens > available_tokens {
+        let requested_output = max_output.or(config.chapter_max_tokens).unwrap_or(8192);
         return Err(format!(
-            "Prompt 预估 {} tokens，超过模型上限 {} tokens。请减少分析维度或使用更大上下文的模型。",
-            prompt_tokens, max_tokens
+            "请求预计需要 {} tokens（输入 {} + 输出保留 {}），超过模型可用上下文 {} tokens。请减少分析维度或使用更大上下文的模型。",
+            prompt_tokens + requested_output as usize,
+            prompt_tokens,
+            requested_output,
+            config.max_context_tokens
         ));
     }
 
@@ -130,15 +134,20 @@ pub async fn call_api_stream(
     config: &LlmConfig,
     prompt: &str,
     app: &tauri::AppHandle,
+    event_name: &str,
     chapter_id: i64,
     max_output: Option<u32>,
 ) -> Result<String, String> {
-    let prompt_tokens = estimate_tokens(prompt);
-    let max_tokens = config.max_context_tokens as usize;
-    if prompt_tokens > max_tokens {
+    let prompt_tokens = estimate_chat_tokens_for_model(config.model.as_str(), SYSTEM_PROMPT, prompt);
+    let available_tokens = calculate_available_request_tokens(config, max_output);
+    if prompt_tokens > available_tokens {
+        let requested_output = max_output.or(config.chapter_max_tokens).unwrap_or(8192);
         return Err(format!(
-            "Prompt 预估 {} tokens，超过模型上限 {} tokens。",
-            prompt_tokens, max_tokens
+            "请求预计需要 {} tokens（输入 {} + 输出保留 {}），超过模型可用上下文 {} tokens。",
+            prompt_tokens + requested_output as usize,
+            prompt_tokens,
+            requested_output,
+            config.max_context_tokens
         ));
     }
 
@@ -160,7 +169,7 @@ pub async fn call_api_stream(
                         full_content.push_str(content);
                         // Only send the incremental chunk, frontend accumulates
                         let _ = app.emit(
-                            "analysis_streaming",
+                            event_name,
                             serde_json::json!({
                                 "chapter_id": chapter_id,
                                 "chunk": content,

@@ -4,6 +4,7 @@ mod epub_parser;
 mod export;
 mod llm;
 mod models;
+mod outline;
 mod prompt;
 mod storage;
 mod token_utils;
@@ -50,11 +51,14 @@ pub fn run() {
             commands::chapter::list_chapters,
             commands::chapter::get_chapter,
             commands::chapter::get_chapter_content,
+            commands::chapter::hydrate_chapter_token_estimates,
             commands::chapter::delete_chapter,
             commands::chapter::delete_chapters,
             commands::chapter::clear_chapter_analysis,
+            commands::chapter::clear_chapter_outline,
             commands::analysis::generate_prompt,
             commands::analysis::estimate_prompt_tokens,
+            commands::analysis::estimate_text_tokens,
             commands::analysis::parse_manual_result,
             commands::analysis::save_analysis,
             commands::analysis::analyze_chapter_api,
@@ -72,7 +76,16 @@ pub fn run() {
             commands::summary::clear_novel_summary,
             commands::summary::generate_full_summary,
             commands::summary::parse_manual_summary_result,
+            commands::outline::generate_chapter_outline,
+            commands::outline::estimate_outline_prompt_tokens,
+            commands::outline::get_chapter_outline,
+            commands::outline::batch_generate_outlines,
+            commands::outline::batch_generate_outline_chapters,
+            commands::outline::get_book_outline,
+            commands::outline::clear_book_outline,
+            commands::outline::generate_book_outline,
             commands::export::export_novel_report,
+            commands::export::export_book_outline,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

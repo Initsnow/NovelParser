@@ -7,6 +7,17 @@ pub struct Database {
 }
 
 impl Database {
+    fn has_chapter_token_count_column(&self) -> Result<bool> {
+        let mut stmt = self.conn.prepare("PRAGMA table_info(chapters)")?;
+        let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        for column in columns {
+            if column? == "token_count" {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     pub fn new(app_data_dir: &PathBuf) -> Result<Self> {
         std::fs::create_dir_all(app_data_dir).ok();
         let db_path = app_data_dir.join("novelparser.db");
@@ -36,12 +47,42 @@ impl Database {
                 chapter_index INTEGER NOT NULL,
                 title TEXT NOT NULL DEFAULT '',
                 content TEXT NOT NULL DEFAULT '',
-                analysis TEXT
+                analysis TEXT,
+                token_count INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS novel_summaries (
                 novel_id TEXT PRIMARY KEY REFERENCES novels(id) ON DELETE CASCADE,
                 summary TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS chapter_outlines (
+                chapter_id INTEGER PRIMARY KEY REFERENCES chapters(id) ON DELETE CASCADE,
+                novel_id TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+                chapter_index INTEGER NOT NULL,
+                content_hash TEXT NOT NULL,
+                outline TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS book_outlines (
+                novel_id TEXT PRIMARY KEY REFERENCES novels(id) ON DELETE CASCADE,
+                outline TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS outline_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                novel_id TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+                layer INTEGER NOT NULL,
+                group_index INTEGER NOT NULL,
+                chapter_start INTEGER NOT NULL,
+                chapter_end INTEGER NOT NULL,
+                content_hash TEXT NOT NULL,
+                outline TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(novel_id, layer, group_index)
             );
 
             CREATE TABLE IF NOT EXISTS summary_cache (
@@ -58,8 +99,16 @@ impl Database {
             );
 
             CREATE INDEX IF NOT EXISTS idx_chapters_novel ON chapters(novel_id, chapter_index);
+            CREATE INDEX IF NOT EXISTS idx_chapter_outlines_novel ON chapter_outlines(novel_id, chapter_index);
+            CREATE INDEX IF NOT EXISTS idx_outline_cache_novel ON outline_cache(novel_id, layer, group_index);
             ",
         )?;
+
+        if !self.has_chapter_token_count_column()? {
+            self.conn
+                .execute("ALTER TABLE chapters ADD COLUMN token_count INTEGER", [])?;
+        }
+
         Ok(())
     }
 
@@ -191,33 +240,70 @@ impl Database {
     }
 
     pub fn list_chapter_metas(&self, novel_id: &str) -> Result<Vec<ChapterMeta>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, chapter_index, title, analysis, LENGTH(content) as content_len
-             FROM chapters WHERE novel_id = ?1 ORDER BY chapter_index",
-        )?;
-        let results = stmt
-            .query_map(params![novel_id], |row| {
-                let analysis_str: Option<String> = row.get(3)?;
-                let content_len: i64 = row.get(4)?;
-                Ok(ChapterMeta {
-                    id: row.get(0)?,
-                    index: row.get::<_, i64>(1)? as usize,
-                    title: row.get(2)?,
-                    has_analysis: analysis_str.is_some(),
-                    token_estimate: (content_len as f64 * 1.5) as usize,
-                })
-            })?
-            .collect::<Result<Vec<_>>>()?;
-        Ok(results)
+        if self.has_chapter_token_count_column()? {
+            let mut stmt = self.conn.prepare(
+                "SELECT c.id, c.chapter_index, c.title, c.analysis, co.chapter_id IS NOT NULL, LENGTH(c.content) as content_len, c.token_count
+                 FROM chapters c
+                 LEFT JOIN chapter_outlines co ON co.chapter_id = c.id
+                 WHERE c.novel_id = ?1 ORDER BY c.chapter_index",
+            )?;
+            let results = stmt
+                .query_map(params![novel_id], |row| {
+                    let analysis_str: Option<String> = row.get(3)?;
+                    let has_outline: bool = row.get(4)?;
+                    let content_len: i64 = row.get(5)?;
+                    let token_count: Option<i64> = row.get(6)?;
+                    Ok(ChapterMeta {
+                        id: row.get(0)?,
+                        index: row.get::<_, i64>(1)? as usize,
+                        title: row.get(2)?,
+                        has_analysis: analysis_str.is_some(),
+                        has_outline,
+                        token_estimate: token_count
+                            .map(|value| value as usize)
+                            .unwrap_or((content_len as f64 * 1.5) as usize),
+                        token_exact: token_count.is_some(),
+                    })
+                })?
+                .collect::<Result<Vec<_>>>()?;
+            Ok(results)
+        } else {
+            let mut stmt = self.conn.prepare(
+                "SELECT c.id, c.chapter_index, c.title, c.analysis, co.chapter_id IS NOT NULL, LENGTH(c.content) as content_len
+                 FROM chapters c
+                 LEFT JOIN chapter_outlines co ON co.chapter_id = c.id
+                 WHERE c.novel_id = ?1 ORDER BY c.chapter_index",
+            )?;
+            let results = stmt
+                .query_map(params![novel_id], |row| {
+                    let analysis_str: Option<String> = row.get(3)?;
+                    let has_outline: bool = row.get(4)?;
+                    let content_len: i64 = row.get(5)?;
+                    Ok(ChapterMeta {
+                        id: row.get(0)?,
+                        index: row.get::<_, i64>(1)? as usize,
+                        title: row.get(2)?,
+                        has_analysis: analysis_str.is_some(),
+                        has_outline,
+                        token_estimate: (content_len as f64 * 1.5) as usize,
+                        token_exact: false,
+                    })
+                })?
+                .collect::<Result<Vec<_>>>()?;
+            Ok(results)
+        }
     }
 
     pub fn load_chapter(&self, chapter_id: i64) -> Result<Chapter> {
         self.conn.query_row(
-            "SELECT id, novel_id, chapter_index, title, content, analysis
-             FROM chapters WHERE id = ?1",
+            "SELECT c.id, c.novel_id, c.chapter_index, c.title, c.content, c.analysis, co.outline
+             FROM chapters c
+             LEFT JOIN chapter_outlines co ON co.chapter_id = c.id
+             WHERE c.id = ?1",
             params![chapter_id],
             |row| {
                 let analysis_str: Option<String> = row.get(5)?;
+                let outline_str: Option<String> = row.get(6)?;
                 Ok(Chapter {
                     id: Some(row.get(0)?),
                     novel_id: row.get(1)?,
@@ -225,6 +311,7 @@ impl Database {
                     title: row.get(3)?,
                     content: row.get(4)?,
                     analysis: analysis_str.and_then(|s| serde_json::from_str(&s).ok()),
+                    outline: outline_str.and_then(|s| serde_json::from_str(&s).ok()),
                 })
             },
         )
@@ -236,6 +323,39 @@ impl Database {
             params![chapter_id],
             |row| row.get(0),
         )
+    }
+
+    pub fn load_chapter_token_count(&self, chapter_id: i64) -> Result<Option<usize>> {
+        if !self.has_chapter_token_count_column()? {
+            return Ok(None);
+        }
+
+        let result = self.conn.query_row(
+            "SELECT token_count FROM chapters WHERE id = ?1",
+            params![chapter_id],
+            |row| row.get::<_, Option<i64>>(0),
+        );
+
+        match result {
+            Ok(Some(count)) => Ok(Some(count as usize)),
+            Ok(None) => Ok(None),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn save_chapter_token_count(&self, chapter_id: i64, token_count: usize) -> Result<()> {
+        if !self.has_chapter_token_count_column()? {
+            self.conn
+                .execute("ALTER TABLE chapters ADD COLUMN token_count INTEGER", [])?;
+        }
+
+        self.conn.execute(
+            "UPDATE chapters SET token_count = ?1 WHERE id = ?2",
+            params![token_count as i64, chapter_id],
+        )?;
+
+        Ok(())
     }
 
     pub fn save_chapter_analysis(&self, chapter_id: i64, analysis: &ChapterAnalysis) -> Result<()> {
@@ -265,6 +385,110 @@ impl Database {
     pub fn clear_chapter_analysis(&self, chapter_id: i64) -> Result<()> {
         self.conn.execute(
             "UPDATE chapters SET analysis = NULL WHERE id = ?1",
+            params![chapter_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_chapter_outline(
+        &self,
+        chapter_id: i64,
+        novel_id: &str,
+        chapter_index: usize,
+        content_hash: &str,
+        outline: &ChapterOutline,
+    ) -> Result<()> {
+        let json = serde_json::to_string(outline).unwrap_or_default();
+        self.conn.execute(
+            "INSERT INTO chapter_outlines (chapter_id, novel_id, chapter_index, content_hash, outline, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(chapter_id) DO UPDATE SET
+                novel_id=excluded.novel_id,
+                chapter_index=excluded.chapter_index,
+                content_hash=excluded.content_hash,
+                outline=excluded.outline,
+                created_at=excluded.created_at",
+            params![
+                chapter_id,
+                novel_id,
+                chapter_index as i64,
+                content_hash,
+                json,
+                outline.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_chapter_outline(&self, chapter_id: i64) -> Result<Option<ChapterOutline>> {
+        let result = self.conn.query_row(
+            "SELECT outline FROM chapter_outlines WHERE chapter_id = ?1",
+            params![chapter_id],
+            |row| {
+                let json: String = row.get(0)?;
+                Ok(serde_json::from_str(&json).ok())
+            },
+        );
+
+        match result {
+            Ok(Some(outline)) => Ok(Some(outline)),
+            Ok(None) => Ok(None),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn load_chapter_outline_hash(&self, chapter_id: i64) -> Result<Option<String>> {
+        let result = self.conn.query_row(
+            "SELECT content_hash FROM chapter_outlines WHERE chapter_id = ?1",
+            params![chapter_id],
+            |row| row.get(0),
+        );
+
+        match result {
+            Ok(hash) => Ok(Some(hash)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn list_chapter_outlines(
+        &self,
+        novel_id: &str,
+    ) -> Result<Vec<(i64, usize, String, String, ChapterOutline)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.chapter_index, c.title, co.content_hash, co.outline
+             FROM chapters c
+             JOIN chapter_outlines co ON co.chapter_id = c.id
+             WHERE c.novel_id = ?1
+             ORDER BY c.chapter_index ASC",
+        )?;
+
+        let results = stmt
+            .query_map(params![novel_id], |row| {
+                let outline_json: String = row.get(4)?;
+                let outline = serde_json::from_str(&outline_json).ok();
+                Ok((
+                    row.get(0)?,
+                    row.get::<_, i64>(1)? as usize,
+                    row.get(2)?,
+                    row.get(3)?,
+                    outline,
+                ))
+            })?
+            .filter_map(|row| match row {
+                Ok((id, index, title, hash, Some(outline))) => Some(Ok((id, index, title, hash, outline))),
+                Ok(_) => None,
+                Err(err) => Some(Err(err)),
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(results)
+    }
+
+    pub fn clear_chapter_outline(&self, chapter_id: i64) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM chapter_outlines WHERE chapter_id = ?1",
             params![chapter_id],
         )?;
         Ok(())
@@ -361,6 +585,67 @@ impl Database {
         Ok(())
     }
 
+    // ---- Book Outline ----
+
+    pub fn save_book_outline(
+        &self,
+        novel_id: &str,
+        content_hash: &str,
+        outline: &BookOutline,
+    ) -> Result<()> {
+        let json = serde_json::to_string(outline).unwrap_or_default();
+        self.conn.execute(
+            "INSERT INTO book_outlines (novel_id, outline, content_hash, created_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(novel_id) DO UPDATE SET
+                outline=excluded.outline,
+                content_hash=excluded.content_hash,
+                created_at=excluded.created_at",
+            params![novel_id, json, content_hash, outline.created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_book_outline(&self, novel_id: &str) -> Result<Option<BookOutline>> {
+        let result = self.conn.query_row(
+            "SELECT outline FROM book_outlines WHERE novel_id = ?1",
+            params![novel_id],
+            |row| {
+                let json: String = row.get(0)?;
+                Ok(serde_json::from_str(&json).ok())
+            },
+        );
+
+        match result {
+            Ok(Some(outline)) => Ok(Some(outline)),
+            Ok(None) => Ok(None),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn load_book_outline_hash(&self, novel_id: &str) -> Result<Option<String>> {
+        let result = self.conn.query_row(
+            "SELECT content_hash FROM book_outlines WHERE novel_id = ?1",
+            params![novel_id],
+            |row| row.get(0),
+        );
+
+        match result {
+            Ok(hash) => Ok(Some(hash)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn clear_book_outline(&self, novel_id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM book_outlines WHERE novel_id = ?1",
+            params![novel_id],
+        )?;
+        Ok(())
+    }
+
     // ---- Settings ----
 
     pub fn save_setting(&self, key: &str, value: &str) -> Result<()> {
@@ -415,6 +700,84 @@ impl Database {
     pub fn clear_summary_cache(&self, novel_id: &str) -> Result<()> {
         self.conn.execute(
             "DELETE FROM summary_cache WHERE novel_id = ?1",
+            params![novel_id],
+        )?;
+        Ok(())
+    }
+
+    // ---- Outline Cache ----
+
+    pub fn save_outline_cache(
+        &self,
+        novel_id: &str,
+        entry: &OutlineCacheEntry,
+    ) -> Result<()> {
+        let json = serde_json::to_string(&entry.outline).unwrap_or_default();
+        self.conn.execute(
+            "INSERT INTO outline_cache (
+                novel_id, layer, group_index, chapter_start, chapter_end, content_hash, outline, created_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(novel_id, layer, group_index) DO UPDATE SET
+                chapter_start=excluded.chapter_start,
+                chapter_end=excluded.chapter_end,
+                content_hash=excluded.content_hash,
+                outline=excluded.outline,
+                created_at=excluded.created_at",
+            params![
+                novel_id,
+                entry.layer,
+                entry.group_index,
+                entry.chapter_start as i64,
+                entry.chapter_end as i64,
+                entry.content_hash,
+                json,
+                entry.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_outline_cache(
+        &self,
+        novel_id: &str,
+        layer: i32,
+        group_index: i32,
+    ) -> Result<Option<OutlineCacheEntry>> {
+        let result = self.conn.query_row(
+            "SELECT chapter_start, chapter_end, content_hash, outline, created_at
+             FROM outline_cache
+             WHERE novel_id = ?1 AND layer = ?2 AND group_index = ?3",
+            params![novel_id, layer, group_index],
+            |row| {
+                let chapter_start = row.get::<_, i64>(0)? as usize;
+                let chapter_end = row.get::<_, i64>(1)? as usize;
+                let content_hash: String = row.get(2)?;
+                let outline_json: String = row.get(3)?;
+                let created_at: String = row.get(4)?;
+                let outline = serde_json::from_str(&outline_json).ok();
+                Ok(outline.map(|outline| OutlineCacheEntry {
+                    layer,
+                    group_index,
+                    chapter_start,
+                    chapter_end,
+                    content_hash,
+                    outline,
+                    created_at,
+                }))
+            },
+        );
+
+        match result {
+            Ok(Some(entry)) => Ok(Some(entry)),
+            Ok(None) => Ok(None),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn clear_outline_cache(&self, novel_id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM outline_cache WHERE novel_id = ?1",
             params![novel_id],
         )?;
         Ok(())

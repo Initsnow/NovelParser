@@ -99,7 +99,17 @@ pub fn estimate_prompt_tokens(
         context_str.as_deref(),
         false,
     );
-    Ok(token_utils::estimate_tokens(&prompt_text))
+    Ok(token_utils::estimate_tokens_for_model(
+        &prompt_text,
+        &config.model,
+    ))
+}
+
+#[tauri::command]
+pub fn estimate_text_tokens(state: State<AppState>, text: String) -> Result<usize, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let config = db.load_llm_config().unwrap_or_default();
+    Ok(token_utils::estimate_tokens_for_model(&text, &config.model))
 }
 
 #[tauri::command]
@@ -147,12 +157,23 @@ pub(crate) async fn do_analyze_chapter(
         context_str.as_deref(),
         forbid_callbacks,
     );
-    let prompt_tokens = token_utils::estimate_tokens(&prompt_text);
-    let available = token_utils::calculate_available_tokens(&config, 0);
+    let prompt_tokens = token_utils::estimate_chat_tokens_for_model(
+        &config.model,
+        crate::llm::SYSTEM_PROMPT,
+        &prompt_text,
+    );
+    let available = token_utils::calculate_available_request_tokens(&config, config.chapter_max_tokens);
 
     let analysis_result = if prompt_tokens > available {
-        let content_budget = token_utils::calculate_available_tokens(&config, 500);
-        let segments = token_utils::split_content_by_tokens(&chapter.content, content_budget);
+        let chapter_content_tokens =
+            token_utils::estimate_tokens_for_model(&chapter.content, &config.model);
+        let prompt_overhead = prompt_tokens.saturating_sub(chapter_content_tokens);
+        let content_budget = available.saturating_sub(prompt_overhead).max(1);
+        let segments = token_utils::split_content_by_tokens_for_model(
+            &chapter.content,
+            content_budget,
+            &config.model,
+        );
         let mut segment_analyses = Vec::new();
 
         for (i, seg) in segments.iter().enumerate() {
@@ -181,6 +202,7 @@ pub(crate) async fn do_analyze_chapter(
                 &config,
                 &seg_prompt,
                 app,
+                "analysis_streaming",
                 chapter_id,
                 config.chapter_max_tokens,
             )
@@ -219,6 +241,7 @@ pub(crate) async fn do_analyze_chapter(
             &config,
             &prompt_text,
             app,
+            "analysis_streaming",
             chapter_id,
             config.chapter_max_tokens,
         )

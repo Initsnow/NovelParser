@@ -90,6 +90,7 @@ export const createNovelSlice: StoreSlice<NovelSlice> = (set, get) => ({
             set({ currentNovel: novel });
             get().clearSelection();
             await get().fetchChapters(id);
+            await get().fetchBookOutline();
             set({ loading: false });
         } catch (e) {
             set({ loading: false });

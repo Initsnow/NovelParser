@@ -295,3 +295,87 @@ pub fn generate_chapter_md(ch: &Chapter) -> String {
 
     md
 }
+
+pub fn generate_book_outline_md(novel: &Novel, outline: &BookOutline) -> String {
+    let mut md = String::new();
+    md.push_str(&format!("# 《{}》快速提纲\n\n", novel.title));
+    md.push_str("## 一句话梗概\n\n");
+    md.push_str(&outline.logline);
+    md.push_str("\n\n");
+
+    md.push_str("## 故事大纲\n\n");
+    md.push_str(&outline.story_outline);
+    md.push_str("\n\n");
+
+    md.push_str("## 世界观设定\n\n");
+    md.push_str(&outline.world_setting);
+    md.push_str("\n\n");
+
+    if !outline.volumes.is_empty() {
+        md.push_str("## 分卷\n\n");
+        for segment in &outline.volumes {
+            md.push_str(&format!(
+                "### 第 {} 卷 {}（第 {}-{} 章）\n\n{}\n\n",
+                segment.volume_number,
+                segment.title,
+                segment.chapter_start + 1,
+                segment.chapter_end + 1,
+                segment.summary
+            ));
+        }
+    }
+
+    if !outline.character_cards.is_empty() {
+        md.push_str("## 角色卡\n\n");
+        for card in &outline.character_cards {
+            md.push_str(&format!("### {}\n\n", card.name));
+            md.push_str(&format!("- 生命周期：{}\n", card.lifecycle));
+            if let (Some(first), Some(last)) = (card.first_volume, card.last_volume) {
+                md.push_str(&format!("- 卷数范围：第 {} 卷 - 第 {} 卷\n", first, last));
+            }
+            md.push_str(&format!("- 角色类型：{}\n", card.character_type));
+            if !card.key_scenes.is_empty() {
+                md.push_str(&format!("- 出场/常驻场景：{}\n", card.key_scenes.join("、")));
+            }
+            md.push_str(&format!("- 描述：{}\n", card.description));
+            md.push_str(&format!("- 性格：{}\n", card.personality));
+            md.push_str(&format!("- 核心驱动力：{}\n", card.core_drive));
+            md.push_str(&format!("- 角色弧光：{}\n\n", card.arc));
+        }
+    }
+
+    if !outline.scene_cards.is_empty() {
+        md.push_str("## 场景卡\n\n");
+        for card in &outline.scene_cards {
+            md.push_str(&format!("### {}\n\n", card.name));
+            md.push_str(&format!("- 生命周期：{}\n", card.lifecycle));
+            if let (Some(first), Some(last)) = (card.first_volume, card.last_volume) {
+                md.push_str(&format!("- 卷数范围：第 {} 卷 - 第 {} 卷\n", first, last));
+            }
+            md.push_str(&format!("- 描述：{}\n", card.description));
+            md.push_str(&format!("- 在剧情中的作用：{}\n\n", card.story_function));
+        }
+    }
+
+    md
+}
+
+pub fn generate_chapter_outlines_md(
+    novel: &Novel,
+    chapter_outlines: &[(usize, String, ChapterOutline)],
+) -> String {
+    let mut md = String::new();
+    md.push_str(&format!("# 《{}》章节提纲\n\n", novel.title));
+
+    for (index, title, outline) in chapter_outlines {
+        md.push_str(&format!("## 第 {} 章 {}\n\n", index + 1, title));
+        md.push_str(&outline.brief);
+        md.push_str("\n\n");
+        if !outline.detail.trim().is_empty() {
+            md.push_str(&outline.detail);
+            md.push_str("\n\n");
+        }
+    }
+
+    md
+}
