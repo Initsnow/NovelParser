@@ -129,6 +129,7 @@ pub fn save_analysis(
 }
 
 pub(crate) async fn do_analyze_chapter(
+    http_client: &reqwest::Client,
     app: &tauri::AppHandle,
     db_mutex: &Mutex<Database>,
     chapter_id: i64,
@@ -199,6 +200,7 @@ pub(crate) async fn do_analyze_chapter(
                 forbid_callbacks,
             );
             let response = llm::call_api_stream(
+                http_client,
                 &config,
                 &seg_prompt,
                 app,
@@ -238,6 +240,7 @@ pub(crate) async fn do_analyze_chapter(
         );
 
         let response = llm::call_api_stream(
+            http_client,
             &config,
             &prompt_text,
             app,
@@ -263,5 +266,5 @@ pub async fn analyze_chapter_api(
     chapter_id: i64,
     dimensions: Vec<AnalysisDimension>,
 ) -> Result<ChapterAnalysis, String> {
-    do_analyze_chapter(&app, &state.db, chapter_id, &dimensions).await
+    do_analyze_chapter(&state.http_client, &app, &state.db, chapter_id, &dimensions).await
 }

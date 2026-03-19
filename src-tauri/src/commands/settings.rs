@@ -20,7 +20,7 @@ pub async fn list_models(state: State<'_, AppState>) -> Result<Vec<String>, Stri
         let db = state.db.lock().map_err(|e| e.to_string())?;
         db.load_llm_config().map_err(|e| e.to_string())?
     };
-    llm::list_models(&config).await
+    llm::list_models(&state.http_client, &config).await
 }
 
 #[tauri::command]

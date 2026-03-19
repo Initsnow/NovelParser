@@ -149,7 +149,7 @@ pub async fn generate_full_summary(
         );
 
         let prompt_text = prompt::generate_group_summary_prompt(chunk, dims);
-        let response = llm::call_api(&config, &prompt_text, config.summary_max_tokens).await?;
+        let response = llm::call_api(&state.http_client, &config, &prompt_text, config.summary_max_tokens).await?;
         let summary_content = analysis_mod::clean_json_response(&response);
         group_summaries.push(summary_content.clone());
 
@@ -176,7 +176,7 @@ pub async fn generate_full_summary(
         analysis_mod::parse_summary_json(&group_summaries[0])?
     } else {
         let final_prompt = prompt::generate_final_summary_prompt(&group_summaries, dims);
-        let response = llm::call_api(&config, &final_prompt, config.summary_max_tokens).await?;
+        let response = llm::call_api(&state.http_client, &config, &final_prompt, config.summary_max_tokens).await?;
         analysis_mod::parse_summary_json(&response)?
     };
 

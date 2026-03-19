@@ -16,6 +16,7 @@ pub(crate) const SYSTEM_PROMPT: &str =
 
 /// Build a configured OpenAI client and chat completion request.
 fn build_client_and_request(
+    http_client: &reqwest::Client,
     config: &LlmConfig,
     prompt: &str,
     max_output: Option<u32>,
@@ -29,7 +30,9 @@ fn build_client_and_request(
     let openai_config = OpenAIConfig::new()
         .with_api_base(&config.base_url)
         .with_api_key(&config.api_key);
-    let client = Client::with_config(openai_config);
+    
+    // Use the shared, timed-out http_client from AppState
+    let client = Client::with_config(openai_config).with_http_client(http_client.clone());
 
     let mut builder = CreateChatCompletionRequestArgs::default();
     builder
@@ -52,14 +55,13 @@ fn build_client_and_request(
 }
 
 /// List available models from an OpenAI-compatible API.
-pub async fn list_models(config: &LlmConfig) -> Result<Vec<String>, String> {
+pub async fn list_models(http_client: &reqwest::Client, config: &LlmConfig) -> Result<Vec<String>, String> {
     let mut url = config.base_url.trim_end_matches('/').to_string();
     if !url.ends_with("/models") {
         url = format!("{}/models", url);
     }
 
-    let client = reqwest::Client::new();
-    let res = client
+    let res = http_client
         .get(&url)
         .header("Authorization", format!("Bearer {}", config.api_key))
         .send()
@@ -94,6 +96,7 @@ pub async fn list_models(config: &LlmConfig) -> Result<Vec<String>, String> {
 
 /// Call an OpenAI-compatible API with the given prompt (non-streaming).
 pub async fn call_api(
+    http_client: &reqwest::Client,
     config: &LlmConfig,
     prompt: &str,
     max_output: Option<u32>,
@@ -111,7 +114,7 @@ pub async fn call_api(
         ));
     }
 
-    let (client, request) = build_client_and_request(config, prompt, max_output)?;
+    let (client, request) = build_client_and_request(http_client, config, prompt, max_output)?;
 
     let response = client
         .chat()
@@ -131,6 +134,7 @@ pub async fn call_api(
 
 /// Call API with streaming, emitting incremental chunks via Tauri events.
 pub async fn call_api_stream(
+    http_client: &reqwest::Client,
     config: &LlmConfig,
     prompt: &str,
     app: &tauri::AppHandle,
@@ -151,7 +155,7 @@ pub async fn call_api_stream(
         ));
     }
 
-    let (client, request) = build_client_and_request(config, prompt, max_output)?;
+    let (client, request) = build_client_and_request(http_client, config, prompt, max_output)?;
 
     let mut stream = client
         .chat()

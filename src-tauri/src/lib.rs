@@ -19,6 +19,7 @@ use tauri::Manager;
 pub(crate) struct AppState {
     pub db: Mutex<Database>,
     pub batch_cancel: AtomicBool,
+    pub http_client: reqwest::Client,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -34,9 +35,16 @@ pub fn run() {
             let db = Database::new(&app_data_dir)
                 .map_err(|e| format!("数据库初始化失败: {}", e))
                 .expect("Failed to initialize database");
+
+            let http_client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(120))
+                .build()
+                .expect("Failed to create HTTP client");
+
             app.manage(AppState {
                 db: Mutex::new(db),
                 batch_cancel: AtomicBool::new(false),
+                http_client,
             });
             Ok(())
         })

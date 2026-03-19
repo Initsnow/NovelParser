@@ -10,6 +10,7 @@ use super::analysis::do_analyze_chapter;
 /// Shared batch analysis helper with error tolerance.
 /// Failed chapters are skipped and errors collected instead of aborting.
 async fn do_batch_analyze(
+    http_client: reqwest::Client,
     app: &tauri::AppHandle,
     db_mutex: &Mutex<Database>,
     cancel_flag: &AtomicBool,
@@ -30,6 +31,7 @@ async fn do_batch_analyze(
     let failed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
     let mut futures = futures::stream::iter(metas.into_iter().map(|meta| {
+        let http_client = http_client.clone();
         let app = app.clone();
         let novel_id = novel_id.to_string();
         let completed = completed.clone();
@@ -56,7 +58,7 @@ async fn do_batch_analyze(
                 },
             );
 
-            match do_analyze_chapter(&app, db_mutex, meta.id, dimensions).await {
+            match do_analyze_chapter(&http_client, &app, db_mutex, meta.id, dimensions).await {
                 Ok(_) => {
                     let completed_count = completed.fetch_add(1, Ordering::Relaxed) + 1;
                     let _ = app.emit(
@@ -161,6 +163,7 @@ pub async fn batch_analyze_novel(
     };
 
     do_batch_analyze(
+        state.http_client.clone(),
         &app,
         &state.db,
         &state.batch_cancel,
@@ -200,6 +203,7 @@ pub async fn batch_analyze_chapters(
     };
 
     do_batch_analyze(
+        state.http_client.clone(),
         &app,
         &state.db,
         &state.batch_cancel,

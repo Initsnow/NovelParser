@@ -105,6 +105,7 @@ pub fn make_outline_groups(nodes: &[OutlineNode], target_tokens: usize) -> Vec<V
 }
 
 pub async fn generate_chapter_outline(
+    http_client: &reqwest::Client,
     app: &tauri::AppHandle,
     chapter: &Chapter,
     config: &LlmConfig,
@@ -113,6 +114,7 @@ pub async fn generate_chapter_outline(
     let content_hash = chapter_content_hash(&chapter.title, &chapter.content);
     let prompt_text = prompt::generate_chapter_outline_prompt(&chapter.title, &chapter.content);
     let response = llm::call_api_stream(
+        http_client,
         config,
         &prompt_text,
         app,

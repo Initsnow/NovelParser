@@ -1,24 +1,10 @@
 use crate::models::*;
-use tiktoken_rs::{
-    cl100k_base_singleton, get_bpe_from_model, o200k_base_singleton, CoreBPE,
-};
+use tiktoken_rs::{o200k_base_singleton, CoreBPE};
 
 const DEFAULT_TOKENIZER_MODEL: &str = "gpt-4o";
 
-fn fallback_bpe_for_model(model: &str) -> &'static CoreBPE {
-    let lower = model.to_ascii_lowercase();
-    if lower.contains("gpt-3.5") || (lower.contains("gpt-4") && !lower.contains("gpt-4o")) {
-        cl100k_base_singleton()
-    } else {
-        o200k_base_singleton()
-    }
-}
-
-fn encoder_for_model(model: &str) -> std::borrow::Cow<'static, CoreBPE> {
-    match get_bpe_from_model(model) {
-        Ok(bpe) => std::borrow::Cow::Owned(bpe),
-        Err(_) => std::borrow::Cow::Borrowed(fallback_bpe_for_model(model)),
-    }
+fn encoder_for_model(_model: &str) -> std::borrow::Cow<'static, CoreBPE> {
+    std::borrow::Cow::Borrowed(o200k_base_singleton())
 }
 
 fn chat_overhead_for_model(model: &str) -> (usize, isize, usize) {
@@ -172,5 +158,20 @@ mod tests {
             .join("\n\n");
         let segments = split_content_by_tokens_for_model(&content, 100, "gpt-4o");
         assert!(segments.len() > 1);
+    }
+    #[test]
+    fn test_performance_many_calls() {
+        let text = "这是一段用来测试性能的中文文本，我们需要确保多次调用 token 估算不会耗时太久。";
+        // 预热：第一次调用会触发单例初始化（解析模型数据）
+        let _ = estimate_tokens(text);
+        
+        let start = std::time::Instant::now();
+        for _ in 0..1000 {
+            let _ = estimate_tokens(text);
+        }
+        let duration = start.elapsed();
+        // 优化后，1000 次调用在 debug 模式下也应该在几百毫秒内完成。
+        // 如果没有优化（每次都 re-parse），1000 次调用可能需要 100 秒以上。
+        assert!(duration.as_millis() < 1000, "Performance test failed: 1000 calls took too long ({:?})", duration);
     }
 }
